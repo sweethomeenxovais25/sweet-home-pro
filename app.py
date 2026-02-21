@@ -179,55 +179,112 @@ with aba_venda:
 # --- ABA 2: FINANCEIRO (RESUMO + FIFO + COBRANÇA) ---
 # ==========================================
 with aba_financeiro:
-    st.markdown("### 💰 Saúde Financeira")
+    st.markdown("### 📈 Resumo Geral Sweet Home")
+    
+    # 1. MÉTRICAS TOTAIS (KPIs)
     if not df_vendas_hist.empty:
-        divida = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
-        pago = df_financeiro['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Dívida Total", f"R$ {divida:,.2f}")
-        c2.metric("Total Recebido", f"R$ {pago:,.2f}")
-        c3.metric("Saldo na Rua", f"R$ {divida-pago:,.2f}", delta="- Pendente", delta_color="inverse")
+        try:
+            # O Saldo na Rua é a soma direta da coluna SALDO DEVEDOR que o FIFO já gerencia
+            saldo_na_rua_atual = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
+            
+            # O Total Recebido é apenas para conferência histórica
+            total_historico_recebido = df_financeiro['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Saldo Total na Rua (Pendente)", f"R$ {saldo_na_rua_atual:,.2f}", delta="A receber", delta_color="inverse")
+            c2.metric("Total já Recebido (Histórico)", f"R$ {total_historico_recebido:,.2f}")
+        except: 
+            st.warning("Erro ao calcular métricas. Verifique os valores na planilha.")
 
     st.divider()
-    with st.expander("➕ Lançar Abatimento (FIFO)", expanded=False):
-        with st.form("f_fifo"):
-            c_pg = st.selectbox("Cliente", sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()]))
-            v_pg = st.number_input("Valor Pago (R$)", 0.0); meio = st.selectbox("Meio", ["Pix", "Dinheiro", "Cartão"]); obs = st.text_input("Obs", "Abatimento")
-            if st.form_submit_button("Confirmar ✅"):
-                if v_pg > 0:
+
+    # 2. LANÇAMENTO FIFO (ABATIMENTO)
+    with st.expander("➕ Lançar Novo Abatimento (Sistema FIFO)", expanded=False):
+        with st.form("f_fifo_novo", clear_on_submit=True):
+            # LISTA UNIFORME: Agora usa o banco_de_clientes completo, igual às outras abas!
+            lista_todas_clientes = sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+            c_pg = st.selectbox("Quem está pagando?", ["Selecione..."] + lista_todas_clientes)
+            
+            f1, f2, f3 = st.columns(3)
+            v_pg = f1.number_input("Valor Pago (R$)", min_value=0.0)
+            meio = f2.selectbox("Meio", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"])
+            obs = f3.text_input("Obs", "Abatimento")
+            
+            if st.form_submit_button("Confirmar Pagamento ✅"):
+                if v_pg > 0 and c_pg != "Selecione...":
                     try:
                         aba_v = planilha_mestre.worksheet("VENDAS")
+                        # Lemos os dados "vivos" para garantir que o FIFO não erre a linha
                         df_v_viva = pd.DataFrame(aba_v.get_all_records())
                         df_v_viva['S_NUM'] = df_v_viva['SALDO DEVEDOR'].apply(limpar_v)
-                        nome_c = " - ".join(c_pg.split(" - ")[1:])
-                        pendentes = df_v_viva[(df_v_viva['CLIENTE'] == nome_c) & (df_v_viva['S_NUM'] > 0)].copy()
+                        
+                        nome_c_alvo = " - ".join(c_pg.split(" - ")[1:])
+                        # Filtra apenas vendas com saldo > 0 daquela cliente
+                        pendentes = df_v_viva[(df_v_viva['CLIENTE'] == nome_c_alvo) & (df_v_viva['S_NUM'] > 0)].copy()
+                        
                         sobra = v_pg
                         for idx, row in pendentes.iterrows():
                             if sobra <= 0: break
-                            lin = idx + 2; div = row['S_NUM']
-                            if sobra >= div:
-                                aba_v.update_acell(f"U{lin}", 0); aba_v.update_acell(f"W{lin}", "Pago"); sobra -= div
+                            lin_planilha = idx + 2 # +2 porque o pandas ignora o cabeçalho e começa no 0
+                            div_linha = row['S_NUM']
+                            
+                            if sobra >= div_linha:
+                                aba_v.update_acell(f"U{lin_planilha}", 0) # Zera a dívida
+                                aba_v.update_acell(f"W{lin_planilha}", "Pago") # Muda status
+                                sobra -= div_linha
                             else:
-                                aba_v.update_acell(f"U{lin}", div - sobra); sobra = 0
+                                aba_v.update_acell(f"U{lin_planilha}", div_linha - sobra) # Abate parcial
+                                sobra = 0
+                        
+                        # Registra no histórico do Financeiro
                         aba_f = planilha_mestre.worksheet("FINANCEIRO")
-                        aba_f.append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), c_pg.split(" - ")[0], nome_c, 0, v_pg, "PAGO", f"{meio}: {obs}"], value_input_option='USER_ENTERED')
-                        st.success("✅ Abatimento Realizado!"); st.cache_resource.clear()
-                    except Exception as e: st.error(f"Erro FIFO: {e}")
+                        aba_f.append_row([
+                            datetime.now().strftime("%d/%m/%Y"), 
+                            datetime.now().strftime("%H:%M"), 
+                            c_pg.split(" - ")[0], 
+                            nome_c_alvo, 0, v_pg, "PAGO", f"{meio}: {obs}"
+                        ], value_input_option='USER_ENTERED')
+                        
+                        st.success(f"✅ Recebido de {nome_c_alvo} processado!")
+                        st.cache_resource.clear()
+                        st.rerun()
+                    except Exception as e: st.error(f"Erro no FIFO: {e}")
 
     st.divider()
-    st.markdown("### 🔍 Ficha de Cliente")
-    if not df_vendas_hist.empty:
-        opc = sorted([f"{c} - {banco_de_clientes.get(str(c), {}).get('nome', '???')}" for c in df_vendas_hist['CÓD. CLIENTE'].unique() if str(c).strip()])
-        sel_c = st.selectbox("Escolha para cobrar:", ["---"] + opc)
-        if sel_c != "---":
-            id_c = sel_c.split(" - ")[0]; nome_c = " - ".join(sel_c.split(" - ")[1:])
-            v_hist = df_vendas_hist[df_vendas_hist['CÓD. CLIENTE'].astype(str) == id_c]
-            div_c = v_hist['SALDO DEVEDOR'].apply(limpar_v).sum(); pago_c = df_financeiro[df_financeiro['CÓD. CLIENTE'].astype(str) == id_c]['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
-            m1, m2 = st.columns(2); m1.metric("Saldo Atual", f"R$ {div_c - pago_c:.2f}")
-            st.dataframe(v_hist[['DATA DA VENDA', 'PRODUTO', 'TOTAL R$', 'SALDO DEVEDOR', 'STATUS']], hide_index=True)
-            if div_c - pago_c > 0:
-                txt = f"Olá {nome_c}! 🏠 Passando da Sweet Home Enxovais para atualizar seu saldo: R$ {div_c - pago_c:.2f}."
-                st.link_button("📲 Cobrar no WhatsApp", f"https://wa.me/55{banco_de_clientes[id_c]['fone']}?text={urllib.parse.quote(txt)}", use_container_width=True)
+
+    # 3. FICHA DA CLIENTE (LISTA CORRIGIDA + CÁLCULO REAL)
+    st.markdown("### 🔍 Ficha de Cliente (Extrato Dinâmico)")
+    
+    # LISTA UNIFORME: Agora igual à de Vendas e Abatimento
+    opcoes_ficha = sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+    sel_ficha = st.selectbox("Selecione para ver o que ela deve:", ["---"] + opcoes_ficha)
+    
+    if sel_ficha != "---":
+        id_c = sel_ficha.split(" - ")[0]
+        nome_c_ficha = " - ".join(sel_ficha.split(" - ")[1:])
+        
+        # Filtra o histórico de vendas dessa cliente
+        v_hist = df_vendas_hist[df_vendas_hist['CÓD. CLIENTE'].astype(str) == id_c]
+        
+        # CORREÇÃO DA MATEMÁTICA: 
+        # Como o FIFO já abate na coluna U, o saldo real é APENAS a soma da coluna U.
+        saldo_devedor_real = v_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
+        
+        c_f1, c_f2 = st.columns(2)
+        c_f1.metric("Saldo Devedor Atual", f"R$ {saldo_devedor_real:,.2f}")
+        
+        if saldo_devedor_real > 0.01:
+            tel_c = banco_de_clientes.get(id_c, {}).get('fone', "")
+            msg_zap = f"Olá {nome_c_ficha}! 🏠 Segue seu extrato na *Sweet Home Enxovais*. Atualmente consta um saldo pendente de *R$ {saldo_devedor_real:.2f}*. Qualquer dúvida estou à disposição! 😊"
+            st.link_button("📲 Cobrar no WhatsApp", f"https://wa.me/55{tel_c}?text={urllib.parse.quote(msg_zap)}", use_container_width=True)
+        else:
+            st.success("✅ Esta cliente não possui débitos pendentes.")
+
+        st.write("#### ⏳ Histórico de Vendas Localizado")
+        if not v_hist.empty:
+            st.dataframe(v_hist[['DATA DA VENDA', 'PRODUTO', 'TOTAL R$', 'SALDO DEVEDOR', 'STATUS']], use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma compra registrada para esta cliente ainda.")
 
 # ==========================================
 # --- ABA 3: ESTOQUE (CADASTRO + BUSCA + ALERTA) ---
@@ -286,3 +343,4 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
