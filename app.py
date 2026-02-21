@@ -33,41 +33,50 @@ if not st.session_state['logado']:
         st.markdown("<h2 style='text-align: center;'>Sweet Home Enxovais</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: gray;'>Sistema de Gestão Interna</p>", unsafe_allow_html=True)
 
-        # Formulário de Login
+        # --- LÓGICA DE ACESSO (LOGIN ÚNICO) ---
+if 'logado' not in st.session_state:
+    st.session_state['logado'] = False
+
+if not st.session_state['logado']:
+    # Layout centralizado para a logo e formulário
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        try:
+            st.image("logo_sweet.png", use_container_width=True)
+        except:
+            st.warning("🌸 Sweet Home Enxovais")
+        
+        st.markdown("<h2 style='text-align: center;'>Gestão Sweet</h2>", unsafe_allow_html=True)
+
         with st.form("login_form"):
             usuario = st.text_input("Usuário").strip()
             senha = st.text_input("Senha", type="password").strip()
             entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
             
             if entrar:
-                # 1. Busca as senhas nos Secrets (Certifique-se que os nomes lá são Bia_CEO e admin)
+                # Busca as senhas nos Secrets
                 senha_bia = st.secrets.get("Bia_CEO")
                 senha_admin = st.secrets.get("admin")
 
-                # 2. Lógica de Verificação Dupla
-                acesso_liberado = False
-                
+                # Validação
                 if usuario.lower() == "bia" and senha == senha_bia:
-                    acesso_liberado = True
-                elif usuario.lower() == "admin" and senha == senha_admin:
-                    acesso_liberado = True
-
-                # 3. Execução do Acesso
-                if acesso_liberado:
                     st.session_state['logado'] = True
-                    st.success("Acesso liberado! Carregando painel...")
+                    st.rerun()
+                elif usuario.lower() == "admin" and senha == senha_admin:
+                    st.session_state['logado'] = True
                     st.rerun()
                 else:
-                    st.error("Usuário ou senha incorretos. Verifique os dados ou os Secrets.")
+                    st.error("Dados incorretos. Verifique os Secrets.")
+    st.stop() # Mata a execução aqui para não mostrar o resto do site antes do login
 
-# --- SE ESTIVER LOGADO, O RESTO DO SITE CONTINUA ABAIXO ---
-# Adicione a logo na barra lateral também para ficar bonito
+# --- SE CHEGOU AQUI, ESTÁ LOGADO ---
 with st.sidebar:
     try:
         st.image("logo_sweet.png", use_container_width=True)
     except:
         st.write("🌸 **Sweet Home**")
     st.divider()
+    # Aqui continuam seus botões de navegação...
 
 # ==========================================
 # 🔒 FASE 1: TELA DE LOGIN & SEGURANÇA
@@ -600,6 +609,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
