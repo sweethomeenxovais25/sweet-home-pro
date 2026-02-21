@@ -39,7 +39,7 @@ if not st.session_state['logado']:
             if entrar:
                 # Busca as senhas nos Secrets
                 senha_bia = str(st.secrets.get("Bia_CEO", "NaoDefinido"))
-                senha_admin = str(st.secrets.get("admin", "NaoDefinido"))
+                senha_admin = str(st.secrets.get("Admin", "NaoDefinido"))
 
                 # Verificação
                 if usuario.lower() == "bia" and senha == senha_bia:
@@ -594,6 +594,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
