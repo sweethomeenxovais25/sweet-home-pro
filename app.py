@@ -39,6 +39,10 @@ if not st.session_state['autenticado']:
     # 🛑 O COMANDO MÁGICO: st.stop() mata o código aqui. 
     # Nada do que estiver abaixo desta linha vai aparecer ou carregar.
     st.stop()
+    st.divider()
+if st.button("Sair do Sistema 🚪"):
+    st.session_state['autenticado'] = False
+    st.rerun()
 
 # ==========================================
 # 🚀 SEU APLICATIVO COMEÇA REALMENTE AQUI
@@ -460,6 +464,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
