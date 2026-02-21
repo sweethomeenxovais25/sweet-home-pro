@@ -341,12 +341,22 @@ with aba_financeiro:
 # ==========================================
 with aba_estoque:
     st.subheader("📦 Inventário e Controle de Entradas")
+    
+    # --- 1. CADASTRAR NOVO PRODUTO ---
     with st.expander("➕ Cadastrar Novo Produto", expanded=False):
         with st.form("form_novo_produto", clear_on_submit=True):
             st.markdown("Preencha os dados básicos. Fórmulas da planilha farão o resto!")
-            c1, c2 = st.columns([1, 2]); n_cod = c1.text_input("Cód. Produto (Ex: TOA-01)"); n_nome = c2.text_input("Nome do Produto")
-            c3, c4, c5 = st.columns(3); n_qtd = c3.number_input("Qtd Inicial", 0); n_custo = c4.number_input("Custo Unit (R$)", 0.0); n_venda = c5.number_input("Valor Venda (R$)", 0.0)
+            c1, c2 = st.columns([1, 2])
+            n_cod = c1.text_input("Cód. Produto (Ex: TOA-01)")
+            n_nome = c2.text_input("Nome do Produto")
+            
+            c3, c4, c5 = st.columns(3)
+            n_qtd = c3.number_input("Qtd Inicial", 0)
+            n_custo = c4.number_input("Custo Unit (R$)", 0.0)
+            n_venda = c5.number_input("Valor Venda (R$)", 0.0)
+            
             n_min = st.number_input("Quantidade Mínima", value=3)
+            
             if st.form_submit_button("Salvar Produto 📦"):
                 if n_cod and n_nome and not modo_teste:
                     try:
@@ -356,19 +366,36 @@ with aba_estoque:
                         aba_inv.update(f"A{prox_inv}", [linha_p], value_input_option='USER_ENTERED')
                         st.success(f"✅ Produto '{n_nome}' cadastrado!")
                         st.cache_resource.clear()
-                    except Exception as e: st.error(f"Erro: {e}")
+                    except Exception as e: 
+                        st.error(f"Erro: {e}")
 
     st.divider()
+
+    # --- 2. EXIBIÇÃO E BUSCA INTELIGENTE ---
     if not df_full_inv.empty:
         df_est = df_full_inv.copy()
+        
+        # Alerta de Estoque Baixo (Mantido)
         df_est['QUANTIDADE'] = pd.to_numeric(df_est['QUANTIDADE'], errors='coerce')
         baixo = df_est[df_est['QUANTIDADE'] <= 3]
         if not baixo.empty:
             st.warning(f"🚨 Atenção: {len(baixo)} produto(s) com estoque baixo!")
-            with st.expander("👀 Ver produtos"): st.dataframe(baixo[['NOME DO PRODUTO', 'QUANTIDADE']], hide_index=True)
+            with st.expander("👀 Ver produtos"): 
+                st.dataframe(baixo[['NOME DO PRODUTO', 'QUANTIDADE']], hide_index=True)
+        
         st.markdown("### 🔍 Buscar Produtos")
-        busca = st.text_input("Localize pelo nome ou data...")
-        if busca: df_est = df_est[df_est['NOME DO PRODUTO'].astype(str).str.contains(busca, case=False)]
+        # Texto atualizado para a Bia saber que pode usar o código agora
+        busca = st.text_input("Localize pelo NOME, CÓDIGO ou DATA...")
+        
+        if busca:
+            # A mágica do "OU" (|): Procuramos o termo nas 3 colunas principais
+            filtro = (
+                df_est['NOME DO PRODUTO'].astype(str).str.contains(busca, case=False, na=False) | 
+                df_est['CÓD. PRÓDUTO'].astype(str).str.contains(busca, case=False, na=False) | 
+                df_est['ÚLTIMA ENTRADA'].astype(str).str.contains(busca, case=False, na=False)
+            )
+            df_est = df_est[filtro]
+            
         st.markdown("### 📋 Tabela de Estoque Atualizada")
         st.dataframe(df_est, use_container_width=True, hide_index=True)
 
@@ -412,5 +439,6 @@ with aba_clientes:
                         aba_cli_sheet.update(f"A{prox_c}", [l_cli], value_input_option='USER_ENTERED')
                         st.success(f"✅ {n_cli} cadastrada!"); st.cache_resource.clear()
                     except Exception as e: st.error(f"Erro: {e}")
+
 
 
