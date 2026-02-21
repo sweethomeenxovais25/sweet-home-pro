@@ -59,6 +59,13 @@ def carregar_dados():
             dados = aba.get_all_values()
             if len(dados) <= 1: return pd.DataFrame()
             df = pd.DataFrame(dados[1:], columns=dados[0])
+            
+            # --- 🛡️ FILTRO ANTI-DUPLICIDADE (NOVIDADE) ---
+            # Remove qualquer linha que tenha a palavra "TOTAIS" na coluna de Código ou Nome
+            if not df.empty:
+                df = df[~df.iloc[:, 1].str.contains("TOTAIS", case=False, na=False)]
+                df = df[~df.iloc[:, 0].str.contains("TOTAIS", case=False, na=False)]
+            
             return df[df.iloc[:, 0].str.strip() != ""]
         except: return pd.DataFrame()
 
@@ -181,20 +188,26 @@ with aba_venda:
 with aba_financeiro:
     st.markdown("### 📈 Resumo Geral Sweet Home")
     
-    # 1. MÉTRICAS TOTAIS (KPIs)
     if not df_vendas_hist.empty:
         try:
-            # O Saldo na Rua é a soma direta da coluna SALDO DEVEDOR que o FIFO já gerencia
-            saldo_na_rua_atual = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
+            # 1. Dívida Total Bruta (Tudo o que já foi vendido na história)
+            divida_bruta_hist = df_vendas_hist['TOTAL R$'].apply(limpar_v).sum()
             
-            # O Total Recebido é apenas para conferência histórica
-            total_historico_recebido = df_financeiro['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
+            # 2. Total Recebido (Soma de todos os abatimentos na aba Financeiro)
+            total_recebido_fin = df_financeiro['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
             
-            c1, c2 = st.columns(2)
-            c1.metric("Saldo Total na Rua (Pendente)", f"R$ {saldo_na_rua_atual:,.2f}", delta="A receber", delta_color="inverse")
-            c2.metric("Total já Recebido (Histórico)", f"R$ {total_historico_recebido:,.2f}")
-        except: 
-            st.warning("Erro ao calcular métricas. Verifique os valores na planilha.")
+            # 3. Saldo Líquido na Rua (O que falta receber HOJE)
+            # Usamos a coluna SALDO DEVEDOR pois ela já é atualizada pelo FIFO
+            saldo_na_rua = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
+
+            # --- EXIBIÇÃO EM 3 COLUNAS (OS SINALIZADORES VOLTARAM!) ---
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Dívida Total (Vendas)", f"R$ {divida_bruta_hist:,.2f}")
+            c2.metric("Total Recebido (Abatimentos)", f"R$ {total_recebido_fin:,.2f}")
+            c3.metric("Saldo Líquido na Rua", f"R$ {saldo_na_rua:,.2f}", delta="- Pendente", delta_color="inverse")
+            
+        except Exception as e:
+            st.warning(f"Aguardando dados... (Dica: Verifique se as colunas estão com nomes certos)")
 
     st.divider()
 
@@ -343,4 +356,5 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
