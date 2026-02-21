@@ -35,19 +35,30 @@ if not st.session_state['logado']:
 
         # Formulário de Login
         with st.form("login_form"):
-            usuario = st.text_input("Usuário")
-            senha = st.text_input("Senha", type="password")
+            usuario = st.text_input("Usuário").strip()
+            senha = st.text_input("Senha", type="password").strip()
             entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
             
             if entrar:
-                # Substitua 'sua_senha_aqui' pela senha que você definiu nos Secrets
-                if usuario == "Bia" and senha == st.secrets["password"]:
+                # 1. Busca as senhas nos Secrets (Certifique-se que os nomes lá são Bia_CEO e admin)
+                senha_bia = st.secrets.get("Bia_CEO")
+                senha_admin = st.secrets.get("admin")
+
+                # 2. Lógica de Verificação Dupla
+                acesso_liberado = False
+                
+                if usuario.lower() == "bia" and senha == senha_bia:
+                    acesso_liberado = True
+                elif usuario.lower() == "admin" and senha == senha_admin:
+                    acesso_liberado = True
+
+                # 3. Execução do Acesso
+                if acesso_liberado:
                     st.session_state['logado'] = True
-                    st.success("Acesso liberado!")
+                    st.success("Acesso liberado! Carregando painel...")
                     st.rerun()
                 else:
-                    st.error("Usuário ou senha incorretos")
-    st.stop() # Para o código aqui se não estiver logado
+                    st.error("Usuário ou senha incorretos. Verifique os dados ou os Secrets.")
 
 # --- SE ESTIVER LOGADO, O RESTO DO SITE CONTINUA ABAIXO ---
 # Adicione a logo na barra lateral também para ficar bonito
@@ -589,6 +600,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
