@@ -213,7 +213,7 @@ with aba_venda:
         enviar = st.form_submit_button("Finalizar Venda 🚀")
 
         if enviar:
-            # --- 1. PONTE DE CADASTRO AUTOMÁTICO ---
+            # --- 1. PONTE DE CADASTRO AUTOMÁTICO (SEU CÓDIGO ORIGINAL) ---
             if c_sel == "*** NOVO CLIENTE ***":
                 if not c_nome_novo or not c_zap: 
                     st.error("⚠️ Preencha Nome e Zap!")
@@ -233,9 +233,64 @@ with aba_venda:
                     except Exception as e: 
                         st.error(f"Erro no cadastro de cliente: {e}")
                         st.stop()
+                else:
+                    cod_cli = "CLI-TESTE" # Código fictício para o modo teste
             else:
                 cod_cli = c_sel.split(" - ")[0]
                 nome_cli = banco_de_clientes[cod_cli]['nome']
+
+            # --- 2. PROCESSAMENTO FINANCEIRO (CÁLCULOS) ---
+            v_bruto = qtd_v * val_v
+            t_liq = v_bruto - desc_v
+            desc_percentual = desc_v / v_bruto if v_bruto > 0 else 0
+            cod_p = p_sel.split(" - ")[0]
+            nome_p = p_sel.split(" - ")[1].strip()
+            custo_un = banco_de_produtos[cod_p].get('custo', 0) if cod_p in banco_de_produtos else 0
+            
+            # --- 3. ENVIO PARA PLANILHA (SÓ SE NÃO FOR TESTE) ---
+            if not modo_teste:
+                try:
+                    aba_v = planilha_mestre.worksheet("VENDAS")
+                    idx_ins = aba_v.find("TOTAIS").row 
+                    eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
+                    f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
+                    
+                    # Linha seguindo a estrutura exata da sua planilha
+                    linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, cod_p, nome_p, custo_un, qtd_v, val_v, desc_percentual, "", "", "", "", metodo, eh_parc, n_p, "", t_liq/n_p if eh_parc=="Sim" else 0, t_liq if eh_parc=="Não" else 0, "", detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", "Pendente" if eh_parc=="Sim" else "Pago", f_atraso]
+                    
+                    aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
+                    st.success("✅ Venda registrada com sucesso!")
+                    st.cache_data.clear() # Limpa o cache para atualizar o número no próximo uso
+                except Exception as e:
+                    st.error(f"Erro ao registrar venda: {e}")
+            else:
+                st.info("🧪 Modo Teste: Simulação realizada com sucesso!")
+
+            # --- 4. RECIBO E BOTÃO WHATSAPP (A PARTE QUE TINHA SUMIDO) ---
+            st.divider()
+            st.markdown("### 📄 Recibo da Venda")
+            
+            # Formatação da mensagem
+            recibo_texto = (
+                f"*RECIBO SWEET HOME*\n\n"
+                f"👤 *Cliente:* {nome_cli}\n"
+                f"📦 *Produto:* {qtd_v}x {nome_p}\n"
+                f"💰 *Total:* R$ {t_liq:.2f}\n"
+                f"💳 *Pagamento:* {metodo}"
+            )
+            if metodo == "Sweet Flex":
+                recibo_texto += f"\n\n*Parcelas:* {n_p}x de R$ {t_liq/n_p:.2f}"
+                for i, data_p in enumerate(detalhes_p):
+                    recibo_texto += f"\n- {i+1}ª: {data_p}"
+
+            st.code(recibo_texto, language="text")
+
+            # Gerar link do WhatsApp
+            import urllib.parse
+            zap_limpo = c_zap.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            link_whatsapp = f"https://wa.me/55{zap_limpo}?text={urllib.parse.quote(recibo_texto)}"
+            
+            st.link_button("📲 Enviar Recibo para Cliente", link_whatsapp, use_container_width=True, type="primary")
             
             # --- 2. PROCESSAMENTO (DESCONTO DECIMAL + TOTAIS) ---
             v_bruto = qtd_v * val_v
@@ -544,6 +599,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
