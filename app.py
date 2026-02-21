@@ -5,6 +5,52 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 from datetime import datetime
 import urllib.parse
+import streamlit as st
+# ... (seus outros imports como pandas, gspread, datetime, etc) ...
+
+# ==========================================
+# 🔒 FASE 1: TELA DE LOGIN & SEGURANÇA
+# ==========================================
+
+# 1. Cria a "memória" para saber se a Bia já fez o login
+if 'autenticado' not in st.session_state:
+    st.session_state['autenticado'] = False
+
+# 2. Se ela NÃO estiver autenticada, mostra a tela de login e TRAVA o resto
+if not st.session_state['autenticado']:
+    st.markdown("<h2 style='text-align: center;'>🔒 Acesso Restrito - Sweet Home</h2>", unsafe_allow_html=True)
+    
+    # Criando colunas só para o formulário ficar centralizado e bonito
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        with st.form("form_login"):
+            usuario = st.text_input("Usuário")
+            senha = st.text_input("Senha", type="password") # Esconde a senha com asteriscos
+            submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+            
+            if submit:
+                # ATENÇÃO: Senha provisória. No próximo passo vamos esconder isso!
+                if usuario == "bia" and senha == "sweet2026": 
+                    st.session_state['autenticado'] = True
+                    st.rerun() # Recarrega a página agora com acesso liberado
+                else:
+                    st.error("❌ Usuário ou senha incorretos. Acesso negado.")
+    
+    # 🛑 O COMANDO MÁGICO: st.stop() mata o código aqui. 
+    # Nada do que estiver abaixo desta linha vai aparecer ou carregar.
+    st.stop()
+
+# ==========================================
+# 🚀 SEU APLICATIVO COMEÇA REALMENTE AQUI
+# ==========================================
+# Pode deixar todo o resto do seu código daqui para baixo (título, abas, carregar_dados, etc).
+
+# (Opcional) Um botãozinho no painel para ela poder sair do sistema depois:
+with st.sidebar:
+    st.markdown(f"👤 Logado como: **bia**")
+    if st.button("Sair (Logout) 🚪"):
+        st.session_state['autenticado'] = False
+        st.rerun()
 
 # ==========================================
 # 1. INICIALIZAÇÃO E MEMÓRIA
@@ -414,6 +460,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
