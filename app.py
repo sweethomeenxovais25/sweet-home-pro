@@ -11,7 +11,7 @@ import streamlit as st
 
 # DEVE SER A PRIMEIRA LINHA DEPOIS DOS IMPORTS:
 st.set_page_config(
-    page_title="Sweet Home Enxovais",
+    page_title="Sweet Home Pro",
     page_icon="logo_sweet.png", # O Favicon que você queria!
     layout="wide"               # Mantém o seu layout atual
 )
@@ -548,6 +548,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
