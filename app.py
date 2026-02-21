@@ -190,15 +190,16 @@ with aba_venda:
                 # Pega os dados desse cliente específico
                 dados_do_cliente = banco_de_clientes.get(cod_cli_temp, {})
                 
-                # Tenta buscar por 'whatsapp', 'zap' ou 'telefone' (o que vier primeiro)
+                # Tenta buscar por chaves comuns (ajuste se sua planilha usa outro nome)
                 telefone_sugerido = dados_do_cliente.get('whatsapp') or \
                                     dados_do_cliente.get('zap') or \
                                     dados_do_cliente.get('telefone') or ""
             
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
-            # O campo WhatsApp agora nasce preenchido se o cliente já existir
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido)
+            
+            # AQUI ESTÁ A CORREÇÃO: Indentação ajustada e KEY adicionada para forçar o refresh
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_{c_sel}")
 
         with col_dir:
             st.write("📦 **Produto**")
@@ -213,7 +214,7 @@ with aba_venda:
         enviar = st.form_submit_button("Finalizar Venda 🚀")
 
         if enviar:
-            # --- PONTE DE CADASTRO AUTOMÁTICO ---
+            # --- 1. PONTE DE CADASTRO AUTOMÁTICO ---
             if c_sel == "*** NOVO CLIENTE ***":
                 if not c_nome_novo or not c_zap: 
                     st.error("⚠️ Preencha Nome e Zap!")
@@ -237,34 +238,29 @@ with aba_venda:
                 cod_cli = c_sel.split(" - ")[0]
                 nome_cli = banco_de_clientes[cod_cli]['nome']
             
-            # Daqui para baixo entra aquela lógica de PROCESSAMENTO que ajustamos antes
-            # para enviar as colunas vazias "" onde o Sheets tem as fórmulas.
-
-            # --- PROCESSAMENTO (DESCONTO DECIMAL + TOTAIS) ---
+            # --- 2. PROCESSAMENTO (DESCONTO DECIMAL + TOTAIS) ---
             v_bruto = qtd_v * val_v
             t_liq = v_bruto - desc_v
             desc_percentual = desc_v / v_bruto if v_bruto > 0 else 0
             
-            # BUSCANDO O CUSTO (Para a fórmula de Lucro do Sheets funcionar)
             cod_p = p_sel.split(" - ")[0]
-            # Usa o custo se existir no banco, senão manda 0
             custo_un = banco_de_produtos[cod_p].get('custo', 0) if cod_p in banco_de_produtos else 0
             
             if not modo_teste:
                 try:
                     aba_v = planilha_mestre.worksheet("VENDAS")
-                    idx_ins = aba_v.find("TOTAIS").row # BUSCA DINÂMICA DO RODAPÉ
+                    idx_ins = aba_v.find("TOTAIS").row 
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
                     linha = [
-                        "",                                          # A: Vazio
+                        "",                                          # A: Vazio (ID)
                         datetime.now().strftime("%d/%m/%Y"),         # B: Data
                         cod_cli,                                     # C: Cód Cliente
                         nome_cli,                                    # D: Nome Cliente
                         cod_p,                                       # E: Cód Prod
                         p_sel.split(" - ")[1].strip(),               # F: Nome Prod
-                        custo_un,                                    # G: CUSTO UNITÁRIO (Adicionado!)
+                        custo_un,                                    # G: Custo Unitário
                         qtd_v,                                       # H: Qtd
                         val_v,                                       # I: Preço Un
                         desc_percentual,                             # J: Desc %
@@ -273,44 +269,32 @@ with aba_venda:
                         "",                                          # M: LUCRO (FÓRMULA)
                         "",                                          # N: MARGEM (FÓRMULA)
                         metodo,                                      # O: Forma Pagto
-                        eh_parc,                                     # P: Parcelado? (Sim/Não)
+                        eh_parc,                                     # P: Parcelado?
                         n_p,                                         # Q: Nº Parcelas
                         "",                                          # R: PAG À VISTA (FÓRMULA)
                         t_liq/n_p if eh_parc == "Sim" else 0,        # S: Valor da Parcela
                         t_liq if eh_parc == "Não" else 0,            # T: Valor Pago
                         "",                                          # U: SALDO DEVEDOR (FÓRMULA)
-                        detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else "", # V: Vencimento 1
+                        detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else "", # V: Vencimento
                         "Pendente" if eh_parc == "Sim" else "Pago",  # W: Status
                         f_atraso                                     # X: Fórmula Atraso
                     ]
                     
                     aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
                     st.cache_resource.clear()
+                    
+                    # --- RECIBO E FEEDBACK ---
+                    st.success("✅ Venda registrada com sucesso!")
+                    recibo = f"*RECIBO SWEET HOME*\nCliente: {nome_cli}\nTotal: R$ {t_liq:.2f}"
+                    st.link_button("📲 Enviar WhatsApp", f"https://wa.me/55{c_zap}?text={recibo}")
+                    
                 except Exception as e: 
-                    st.error(f"Erro ao registrar: {e}")
+                    st.error(f"Erro ao registrar venda: {e}")
 
-            # --- REGISTROS RECENTES (MEMÓRIA DA SESSÃO) ---
-            st.session_state['historico_sessao'].insert(0, {
-                "Data": datetime.now().strftime("%d/%m/%Y"),
-                "Hora": datetime.now().strftime("%H:%M:%S"),
-                "Cliente": nome_cli, "Produto": p_sel.split(" - ")[1], "Total": f"R$ {t_liq:.2f}"
-            })
-            
-            # --- RECIBO COMPLETO ---
-            recibo = f"*RECIBO SWEET HOME*\nCliente: {nome_cli}\nData: {datetime.now().strftime('%d/%m/%Y')}\nVendedor(a): {vendedor}\nItem: {qtd_v}x {p_sel.split(' - ')[1]}\nTotal: R$ {t_liq:.2f}"
-            if metodo == "Sweet Flex":
-                recibo += "\n\n*Parcelas:*"
-                for d_p in detalhes_p: recibo += f"\n{d_p} --- R$ {t_liq/n_p:.2f}"
-            st.link_button("📲 Enviar WhatsApp", f"https://wa.me/55{c_zap}?text={urllib.parse.quote(recibo)}", use_container_width=True)
-
-    # --- SEÇÃO REGISTROS RECENTES VISÍVEL ---
+    # --- SEÇÃO REGISTROS RECENTES ---
     st.divider()
-    st.subheader("📝 Registros Realizados Agora")
-    if st.session_state['historico_sessao']:
-        st.dataframe(st.session_state['historico_sessao'], use_container_width=True, hide_index=True)
-        if st.button("Limpar Histórico Local 🗑️"):
-            st.session_state['historico_sessao'] = []; st.rerun()
-    else: st.info("Aguardando vendas...")
+    st.subheader("📝 Histórico da Sessão")
+    # (Opcional: Adicione aqui a exibição do histórico se desejar)
 
 # ==========================================
 # --- ABA 2: FINANCEIRO (RESUMO + FIFO + COBRANÇA) ---
@@ -505,6 +489,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
