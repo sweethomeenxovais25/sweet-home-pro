@@ -149,8 +149,7 @@ def carregar_dados():
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
 
-    banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[6])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
-    banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
+banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}    banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
 
     return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli
 
@@ -436,11 +435,19 @@ elif menu_selecionado == "📦 Estoque":
     st.subheader("📦 Gestão de Itens")
     with st.expander("➕ Cadastrar Novo Produto"):
         with st.form("f_est", clear_on_submit=True):
-            c1, c2 = st.columns([1, 2]); n_c = c1.text_input("Cód."); n_n = c2.text_input("Nome")
-            c3, c4 = st.columns(2); n_q = c3.number_input("Qtd", 0); n_v = c4.number_input("Venda", 0.0)
+            c1, c2 = st.columns([1, 2])
+            n_c = c1.text_input("Cód.")
+            n_n = c2.text_input("Nome")
+            
+            c3, c4, c5 = st.columns(3)
+            n_q = c3.number_input("Qtd", 0)
+            n_custo = c4.number_input("Custo (R$)", 0.0) # <-- CAMPO NOVO AQUI
+            n_v = c5.number_input("Venda (R$)", 0.0)
+            
             if st.form_submit_button("Salvar"):
                 aba_inv = planilha_mestre.worksheet("INVENTÁRIO")
-                aba_inv.append_row([n_c, n_n, n_q, 0, "", 3, 0, "", n_v, datetime.now().strftime("%d/%m/%Y"), ""], value_input_option='USER_ENTERED')
+                # Agora o 'n_custo' vai para a Coluna D (4ª posição do array)
+                aba_inv.append_row([n_c, n_n, n_q, n_custo, "", 3, 0, "", n_v, datetime.now().strftime("%d/%m/%Y"), ""], value_input_option='USER_ENTERED')
                 st.success("✅ Cadastrado!"); st.cache_resource.clear()
     
     st.divider()
@@ -534,6 +541,7 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
