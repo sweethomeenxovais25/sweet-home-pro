@@ -18,6 +18,9 @@ if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
 # 3. TELA DE LOGIN (Só aparece se NÃO estiver logado)
+if 'logado' not in st.session_state:
+    st.session_state['logado'] = False
+
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -34,19 +37,22 @@ if not st.session_state['logado']:
             entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
             
             if entrar:
-                # O .get garante que, se não existir no Secret, ele não trave o app
+                # Busca as senhas nos Secrets
                 senha_bia = str(st.secrets.get("Bia_CEO", "NaoDefinido"))
                 senha_admin = str(st.secrets.get("admin", "NaoDefinido"))
 
-                # Verificação (Note o uso do .strip() na senha também para limpar espaços)
-                if usuario.lower() == "bia" and senha.strip() == senha_bia.strip():
+                # Verificação
+                if usuario.lower() == "bia" and senha == senha_bia:
                     st.session_state['logado'] = True
                     st.rerun()
-                elif usuario.lower() == "admin" and senha.strip() == senha_admin.strip():
+                elif usuario.lower() == "admin" and senha == senha_admin:
                     st.session_state['logado'] = True
                     st.rerun()
                 else:
                     st.error("Dados incorretos. Verifique os Secrets.")
+    
+    # --- O SEGREDO ESTÁ AQUI ---
+    st.stop() # Isso impede que QUALQUER coisa abaixo apareça se não logar
 
 # 4. CONFIGURAÇÃO APÓS LOGIN (Barra Lateral)
 with st.sidebar:
@@ -588,6 +594,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
