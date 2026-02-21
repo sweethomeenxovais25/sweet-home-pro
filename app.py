@@ -6,23 +6,26 @@ import os
 from datetime import datetime
 import urllib.parse
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira função Streamlit)
+# ==========================================
+# 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
+# ==========================================
 st.set_page_config(
-    page_title="Gestão Sweet",
-    page_icon="logo_sweet.png",
+    page_title="Gestão Sweet", 
+    page_icon="logo_sweet.png", 
     layout="wide"
 )
 
-# 2. INICIALIZAÇÃO DO ESTADO DE LOGIN
-if 'logado' not in st.session_state:
-    st.session_state['logado'] = False
+# Inicialização das Memórias de Sessão
+if 'autenticado' not in st.session_state:
+    st.session_state['autenticado'] = False
+if 'historico_sessao' not in st.session_state:
+    st.session_state['historico_sessao'] = []
 
-# 3. TELA DE LOGIN (Só aparece se NÃO estiver logado)
-if 'logado' not in st.session_state:
-    st.session_state['logado'] = False
-
-if not st.session_state['logado']:
-    col1, col2, col3 = st.columns([1, 1, 1])
+# ==========================================
+# 🔒 2. FASE DE LOGIN & SEGURANÇA
+# ==========================================
+if not st.session_state['autenticado']:
+    col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         try:
             st.image("logo_sweet.png", use_container_width=True)
@@ -31,99 +34,48 @@ if not st.session_state['logado']:
         
         st.markdown("<h2 style='text-align: center;'>Gestão Sweet</h2>", unsafe_allow_html=True)
 
-        with st.form("login_form"):
-            usuario = st.text_input("Usuário").strip()
-            senha = st.text_input("Senha", type="password").strip()
+        with st.form("form_login"):
+            usuario_input = st.text_input("Usuário").strip()
+            senha_input = st.text_input("Senha", type="password").strip()
             entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
             
             if entrar:
-                # Busca as senhas nos Secrets
-                senha_bia = str(st.secrets.get("Bia_CEO", "NaoDefinido"))
-                senha_admin = str(st.secrets.get("Admin", "NaoDefinido"))
+                try:
+                    # Tenta ler do formato 'usuarios' nos Secrets
+                    usuarios_permitidos = st.secrets["usuarios"]
+                    
+                    if usuario_input in usuarios_permitidos:
+                        if str(usuarios_permitidos[usuario_input]) == senha_input:
+                            st.session_state['autenticado'] = True
+                            st.session_state['usuario_logado'] = usuario_input
+                            st.rerun()
+                        else:
+                            st.error("❌ Senha incorreta.")
+                    else:
+                        st.error("❌ Usuário não encontrado.")
+                except Exception as e:
+                    st.error("Erro ao acessar cofre de senhas. Verifique os Secrets.")
+    st.stop() # Bloqueia o resto do código se não estiver logado
 
-                # Verificação
-                if usuario.lower() == "bia" and senha == senha_bia:
-                    st.session_state['logado'] = True
-                    st.rerun()
-                elif usuario.lower() == "admin" and senha == senha_admin:
-                    st.session_state['logado'] = True
-                    st.rerun()
-                else:
-                    st.error("Dados incorretos. Verifique os Secrets.")
-    
-    # --- O SEGREDO ESTÁ AQUI ---
-    st.stop() # Isso impede que QUALQUER coisa abaixo apareça se não logar
+# ==========================================
+# 🚀 3. SISTEMA LIBERADO (CONEXÕES E DADOS)
+# ==========================================
 
-# 4. CONFIGURAÇÃO APÓS LOGIN (Barra Lateral)
+# Barra Lateral (Sidebar) com Logout e Logo
 with st.sidebar:
     try:
         st.image("logo_sweet.png", use_container_width=True)
     except:
         st.write("🌸 **Sweet Home**")
-    st.divider()
-    # ABAIXO DAQUI CONTINUAM SEUS BOTÕES DE NAVEGAÇÃO (Páginas/Abas)
-
-# ==========================================
-# 🔒 FASE 1: TELA DE LOGIN & SEGURANÇA
-# ==========================================
-
-# 1. Cria a "memória" para saber se a Bia já fez o login
-if 'autenticado' not in st.session_state:
-    st.session_state['autenticado'] = False
-
-# 2. Se ela NÃO estiver autenticada, mostra a tela de login e TRAVA o resto
-if not st.session_state['autenticado']:
-    st.markdown("<h2 style='text-align: center;'>🔒 Acesso Restrito - Sweet Home</h2>", unsafe_allow_html=True)
     
-    # Criando colunas só para o formulário ficar centralizado e bonito
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        with st.form("form_login"):
-            usuario = st.text_input("Usuário")
-            senha = st.text_input("Senha", type="password") # Esconde a senha com asteriscos
-            submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
-            
-            if submit:
-                # 1. Puxa a lista de usuários do cofre
-                usuarios_permitidos = st.secrets["usuarios"]
-                
-                # 2. Verifica se o usuário digitado existe no cofre
-                if usuario in usuarios_permitidos:
-                    # 3. Verifica se a senha bate com a do cofre
-                    if usuarios_permitidos[usuario] == senha:
-                        st.session_state['autenticado'] = True
-                        st.session_state['usuario_logado'] = usuario # Guarda quem logou
-                        st.rerun()
-                    else:
-                        st.error("❌ Senha incorreta.")
-                else:
-                    st.error("❌ Usuário não encontrado.")
-    
-    # 🛑 O COMANDO MÁGICO: st.stop() mata o código aqui se não logar. 
-    st.stop()
-
-# ==========================================
-# 🚀 SEU APLICATIVO COMEÇA REALMENTE AQUI
-# ==========================================
-
-# 🚪 O Botão de Sair (Colocado na barra lateral para quem já entrou)
-with st.sidebar:
+    st.write(f"👋 Olá, **{st.session_state.get('usuario_logado', 'Usuária')}**!")
     st.divider()
+    
     if st.button("Sair do Sistema 🚪", use_container_width=True):
         st.session_state['autenticado'] = False
         st.rerun()
 
-# (Aqui embaixo continua o resto do seu código original: Título, carregar dados, etc...)
-
-# ==========================================
-# 1. INICIALIZAÇÃO E MEMÓRIA
-# ==========================================
-st.set_page_config(page_title="Sweet Home Pro", page_icon="🏠", layout="wide")
-
-# Registros Recentes (A memória da sessão que você pediu)
-if 'historico_sessao' not in st.session_state:
-    st.session_state['historico_sessao'] = []
-
+# --- CONFIGURAÇÃO GOOGLE SHEETS ---
 ID_PLANILHA = "1E2NwI5WBE1iCjTWxpUxy3TYpiwKU6e4s4-C1Rp1AJX8"
 ESPECIFICACOES = [
     "https://spreadsheets.google.com/feeds", 
@@ -594,6 +546,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
