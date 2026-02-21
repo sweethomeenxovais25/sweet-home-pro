@@ -46,6 +46,7 @@ planilha_mestre = conectar_google()
 # ==========================================
 # 2. CARREGAMENTO REFINADO (Fiel à Planilha)
 # ==========================================
+@st.cache_resource(ttl=600)
 def carregar_dados():
     if not planilha_mestre: 
         return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -54,37 +55,34 @@ def carregar_dados():
         try:
             aba = planilha_mestre.worksheet(nome)
             dados = aba.get_all_values()
-            if not dados: return pd.DataFrame()
+            if len(dados) <= 1: return pd.DataFrame() # Se só tiver cabeçalho ou estiver vazia
             df = pd.DataFrame(dados[1:], columns=dados[0])
+            # Limpa linhas onde a primeira coluna (Código) está vazia
             return df[df.iloc[:, 0].str.strip() != ""]
         except: return pd.DataFrame()
 
     df_inv = ler_aba_seguro("INVENTÁRIO")
-    df_cli = ler_aba_seguro("CARTEIRA DE CLIENTES") # Lemos a aba de clientes aqui
+    df_cli = ler_aba_seguro("CARTEIRA DE CLIENTES")
     df_fin = ler_aba_seguro("FINANCEIRO")
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
 
-    banco_prod = {str(r['CÓD. PRÓDUTO']): {"nome": r['NOME DO PRODUTO'], "estoque": r['ESTOQUE ATUAL'], "venda": r['VALOR DE VENDA']} for _, r in df_inv.iterrows()}
-    banco_cli = {str(r['CÓD. CLIENTE']): {"nome": str(r['NOME DO CLIENTE']), "fone": str(r.get('TELEFONE', ''))} for _, r in df_cli.iterrows()}
+    # Dicionários de busca rápida (Segurança por posição para evitar KeyError)
+    banco_prod = {}
+    if not df_inv.empty:
+        for _, r in df_inv.iterrows():
+            banco_prod[str(r.iloc[0])] = {"nome": r.iloc[1], "estoque": r.iloc[2], "venda": r.iloc[8]}
 
-    # CORREÇÃO: Agora estamos retornando o df_cli como o sétimo item!
+    banco_cli = {}
+    if not df_cli.empty:
+        for _, r in df_cli.iterrows():
+            # Pegamos: Col 0 (Código), Col 1 (Nome), Col 2 (Fone)
+            banco_cli[str(r.iloc[0])] = {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])}
+
     return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli
 
-# Atualize a linha que chama a função logo abaixo dela:
+# Recebimento dos dados (7 itens agora)
 banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full = carregar_dados()
-# ==========================================
-# 3. BARRA LATERAL
-# ==========================================
-st.sidebar.title("🛠️ Painel Sweet Home")
-modo_teste = st.sidebar.toggle("🔬 Modo de Teste (Simulação)", value=False)
-if modo_teste: st.sidebar.warning("⚠️ MODO TESTE ATIVO")
-
-if st.sidebar.button("🔄 Sincronizar Planilha"):
-    st.cache_resource.clear()
-    st.rerun()
-
-aba_venda, aba_financeiro, aba_estoque, aba_clientes = st.tabs(["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"])
 
 # ==========================================
 # --- ABA 1: VENDAS ---
@@ -396,42 +394,42 @@ with aba_clientes:
     st.subheader("👥 Gestão de Clientes")
     
     if not df_clientes_full.empty:
-        # --- 🚨 PARTE 1: O RADAR (SÓ QUEM FALTA DADOS) ---
-        # Ele filtra apenas quem tem o status "Incompleto" na coluna 7 (índice 7)
-        incompletos = df_clientes_full[df_clientes_full['STATUS'] == "Incompleto"]
-        
-        if not incompletos.empty:
-            st.warning(f"🚨 Radar: {len(incompletos)} cadastro(s) aguardando conclusão!")
-            with st.expander("📝 Completar Cadastros pendentes"):
-                # Seu formulário de atualização aqui (mantido)
-                pass
-        else:
-            st.success("✨ Tudo em dia! Todos os clientes estão com cadastro completo.")
+        # --- 🚨 PARTE 1: RADAR DE INCOMPLETOS ---
+        # Olhamos para a Coluna 7 (oitava coluna) onde fica o 'Incompleto'
+        try:
+            # Filtramos quem é "Incompleto" na 8ª coluna (índice 7)
+            mask_incompletos = df_clientes_full.iloc[:, 7].str.strip() == "Incompleto"
+            incompletos = df_clientes_full[mask_incompletos]
+            
+            if not incompletos.empty:
+                st.warning(f"🚨 Radar: {len(incompletos)} cadastro(s) aguardando conclusão!")
+                with st.expander("📝 Detalhes dos Pendentes"):
+                    st.dataframe(incompletos, use_container_width=True, hide_index=True)
+            else:
+                st.success("✨ Tudo em dia! Todos os clientes estão com cadastro completo.")
+        except:
+            st.info("Status de cadastro não identificado nesta planilha.")
 
         st.divider()
 
-        # --- 📋 PARTE 2: A CARTEIRA TOTAL (TODO MUNDO) ---
+        # --- 📋 PARTE 2: CARTEIRA TOTAL (AQUI APARECE TODO MUNDO!) ---
         st.markdown("### 🗂️ Carteira Total de Clientes")
-        # Aqui é onde você verá todos os seus clientes antigos e novos juntos!
-        st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
-
+        
+        # Campo de busca para não precisar rolar a lista toda
+        busca_cli = st.text_input("🔍 Buscar cliente na lista total (por nome ou código):")
+        
+        df_mostrar = df_clientes_full.copy()
+        if busca_cli:
+            # Busca no Nome (Col 1) ou Código (Col 0)
+            filtro = (df_mostrar.iloc[:, 1].str.contains(busca_cli, case=False, na=False) | 
+                      df_mostrar.iloc[:, 0].str.contains(busca_cli, case=False, na=False))
+            df_mostrar = df_mostrar[filtro]
+        
+        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+        
     else:
-        st.info("Nenhum cliente cadastrado na planilha ou aguardando conexão...")
+        st.info("Nenhum cliente encontrado na planilha.")
 
-    st.divider()
-    with st.expander("➕ Novo Cadastro"):
-        with st.form("form_novo_cli", clear_on_submit=True):
-            n_cli = st.text_input("Nome Completo *"); z_cli = st.text_input("WhatsApp *")
-            e_cli = st.text_input("Bairro / Endereço"); v_cli = st.number_input("Vale Inicial", 0.0)
-            if st.form_submit_button("Salvar Novo Cadastro 💾"):
-                if n_cli and z_cli and not modo_teste:
-                    try:
-                        prox_c = len(aba_cli_sheet.col_values(1)) + 1
-                        cod_g = f"CLI-{prox_c:03d}"
-                        l_cli = [cod_g, n_cli.strip(), z_cli.strip(), e_cli.strip(), datetime.now().strftime("%d/%m/%Y"), v_cli, "", "Completo" if e_cli else "Incompleto"]
-                        aba_cli_sheet.update(f"A{prox_c}", [l_cli], value_input_option='USER_ENTERED')
-                        st.success(f"✅ {n_cli} cadastrada!"); st.cache_resource.clear()
-                    except Exception as e: st.error(f"Erro: {e}")
 
 
 
