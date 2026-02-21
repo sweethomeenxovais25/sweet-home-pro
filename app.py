@@ -49,6 +49,7 @@ def limpar_v(v):
 # 2. MOTOR DE DADOS REFINADO (7 ITENS)
 # ==========================================
 @st.cache_resource(ttl=600)
+@st.cache_resource(ttl=600)
 def carregar_dados():
     if not planilha_mestre: 
         return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -60,11 +61,11 @@ def carregar_dados():
             if len(dados) <= 1: return pd.DataFrame()
             df = pd.DataFrame(dados[1:], columns=dados[0])
             
-            # --- 🛡️ FILTRO ANTI-DUPLICIDADE (NOVIDADE) ---
-            # Remove qualquer linha que tenha a palavra "TOTAIS" na coluna de Código ou Nome
+            # Remove a linha de "TOTAIS" para não duplicar os valores nos cálculos do Python
             if not df.empty:
-                df = df[~df.iloc[:, 1].str.contains("TOTAIS", case=False, na=False)]
+                # Filtra se a palavra TOTAIS aparecer na coluna A ou B (índices 0 e 1)
                 df = df[~df.iloc[:, 0].str.contains("TOTAIS", case=False, na=False)]
+                df = df[~df.iloc[:, 1].str.contains("TOTAIS", case=False, na=False)]
             
             return df[df.iloc[:, 0].str.strip() != ""]
         except: return pd.DataFrame()
@@ -75,7 +76,8 @@ def carregar_dados():
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
 
-    banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "estoque": r.iloc[2], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
+    # Mapeamento técnico para os seletores (baseado nas suas colunas)
+    banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
 
     return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli
@@ -190,24 +192,26 @@ with aba_financeiro:
     
     if not df_vendas_hist.empty:
         try:
-            # 1. Dívida Total Bruta (Tudo o que já foi vendido na história)
-            divida_bruta_hist = df_vendas_hist['TOTAL R$'].apply(limpar_v).sum()
+            # MÉTRICAS BASEADAS NAS COLUNAS EXATAS:
+            # Coluna L (TOTAL), Coluna M (LUCRO), Coluna U (SALDO DEVEDOR)
             
-            # 2. Total Recebido (Soma de todos os abatimentos na aba Financeiro)
-            total_recebido_fin = df_financeiro['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
+            vendas_brutas_total = df_vendas_hist['TOTAL'].apply(limpar_v).sum()
+            lucro_total_estimado = df_vendas_hist['LUCRO'].apply(limpar_v).sum()
+            saldo_na_rua_pendente = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
             
-            # 3. Saldo Líquido na Rua (O que falta receber HOJE)
-            # Usamos a coluna SALDO DEVEDOR pois ela já é atualizada pelo FIFO
-            saldo_na_rua = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
+            # O Total Recebido é a diferença entre o que foi vendido e o que ainda não pagaram
+            total_ja_recebido = vendas_brutas_total - saldo_na_rua_pendente
 
-            # --- EXIBIÇÃO EM 3 COLUNAS (OS SINALIZADORES VOLTARAM!) ---
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Dívida Total (Vendas)", f"R$ {divida_bruta_hist:,.2f}")
-            c2.metric("Total Recebido (Abatimentos)", f"R$ {total_recebido_fin:,.2f}")
-            c3.metric("Saldo Líquido na Rua", f"R$ {saldo_na_rua:,.2f}", delta="- Pendente", delta_color="inverse")
+            # Exibição em 4 colunas para incluir o Lucro
+            c1, c2, c3, c4 = st.columns(4)
+            
+            c1.metric("Vendas Totais (L)", f"R$ {vendas_brutas_total:,.2f}")
+            c2.metric("Lucro Estimado (M)", f"R$ {lucro_total_estimado:,.2f}")
+            c3.metric("Total Recebido", f"R$ {total_ja_recebido:,.2f}")
+            c4.metric("Saldo na Rua (U)", f"R$ {saldo_na_rua_pendente:,.2f}", delta="- Pendente", delta_color="inverse")
             
         except Exception as e:
-            st.warning(f"Aguardando dados... (Dica: Verifique se as colunas estão com nomes certos)")
+            st.error(f"Erro no cálculo das métricas: {e}. Verifique os nomes das colunas L, M e U.")
 
     st.divider()
 
@@ -356,5 +360,6 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
