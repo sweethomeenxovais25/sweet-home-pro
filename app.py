@@ -50,6 +50,7 @@ def limpar_v(v):
 # ==========================================
 @st.cache_resource(ttl=600)
 @st.cache_resource(ttl=600)
+@st.cache_resource(ttl=600)
 def carregar_dados():
     if not planilha_mestre: 
         return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -61,13 +62,16 @@ def carregar_dados():
             if len(dados) <= 1: return pd.DataFrame()
             df = pd.DataFrame(dados[1:], columns=dados[0])
             
-            # Remove a linha de "TOTAIS" para não duplicar os valores nos cálculos do Python
+            # --- 🛡️ FILTRO TÉCNICO: REMOVE LINHAS DE RESUMO ---
             if not df.empty:
-                # Filtra se a palavra TOTAIS aparecer na coluna A ou B (índices 0 e 1)
+                # Remove linhas onde a palavra "TOTAIS" aparece nas colunas A ou B
+                # Usamos case=False para pegar "Totais", "TOTAIS" ou "totais"
                 df = df[~df.iloc[:, 0].str.contains("TOTAIS", case=False, na=False)]
                 df = df[~df.iloc[:, 1].str.contains("TOTAIS", case=False, na=False)]
+                # Limpeza extra de linhas totalmente vazias
+                df = df[df.iloc[:, 1].str.strip() != ""]
             
-            return df[df.iloc[:, 0].str.strip() != ""]
+            return df
         except: return pd.DataFrame()
 
     df_inv = ler_aba_seguro("INVENTÁRIO")
@@ -76,7 +80,7 @@ def carregar_dados():
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
 
-    # Mapeamento técnico para os seletores (baseado nas suas colunas)
+    # Mapeamento para os seletores (mantendo a integridade)
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
 
@@ -192,26 +196,22 @@ with aba_financeiro:
     
     if not df_vendas_hist.empty:
         try:
-            # MÉTRICAS BASEADAS NAS COLUNAS EXATAS:
-            # Coluna L (TOTAL), Coluna M (LUCRO), Coluna U (SALDO DEVEDOR)
+            # L=11, M=12, U=20 (Índices baseados na sua planilha)
+            vendas_brutas = df_vendas_hist.iloc[:, 11].apply(limpar_v).sum()
+            lucro_estimado = df_vendas_hist.iloc[:, 12].apply(limpar_v).sum()
+            saldo_pendente = df_vendas_hist.iloc[:, 20].apply(limpar_v).sum()
             
-            vendas_brutas_total = df_vendas_hist['TOTAL'].apply(limpar_v).sum()
-            lucro_total_estimado = df_vendas_hist['LUCRO'].apply(limpar_v).sum()
-            saldo_na_rua_pendente = df_vendas_hist['SALDO DEVEDOR'].apply(limpar_v).sum()
-            
-            # O Total Recebido é a diferença entre o que foi vendido e o que ainda não pagaram
-            total_ja_recebido = vendas_brutas_total - saldo_na_rua_pendente
+            # Cálculo do que já caiu no caixa
+            ja_recebido = vendas_brutas - saldo_pendente
 
-            # Exibição em 4 colunas para incluir o Lucro
             c1, c2, c3, c4 = st.columns(4)
-            
-            c1.metric("Vendas Totais (L)", f"R$ {vendas_brutas_total:,.2f}")
-            c2.metric("Lucro Estimado (M)", f"R$ {lucro_total_estimado:,.2f}")
-            c3.metric("Total Recebido", f"R$ {total_ja_recebido:,.2f}")
-            c4.metric("Saldo na Rua (U)", f"R$ {saldo_na_rua_pendente:,.2f}", delta="- Pendente", delta_color="inverse")
+            c1.metric("Vendas Totais (L)", f"R$ {vendas_brutas:,.2f}")
+            c2.metric("Lucro Bruto (M)", f"R$ {lucro_estimado:,.2f}")
+            c3.metric("Total Recebido", f"R$ {ja_recebido:,.2f}")
+            c4.metric("Saldo na Rua (U)", f"R$ {saldo_pendente:,.2f}", delta="- Pendente", delta_color="inverse")
             
         except Exception as e:
-            st.error(f"Erro no cálculo das métricas: {e}. Verifique os nomes das colunas L, M e U.")
+            st.warning(f"Erro ao processar colunas L, M ou U. Verifique a estrutura da planilha. (Detalhe: {e})")
 
     st.divider()
 
@@ -360,6 +360,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
