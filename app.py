@@ -127,45 +127,33 @@ with aba_venda:
             vendedor = st.text_input("Vendedor(a)", value="Bia")
 
         if st.form_submit_button("Finalizar Venda 🚀"):
-            # --- 1. PONTE DE CADASTRO AUTOMÁTICO (NOVIDADE) ---
+            # --- 1. PONTE DE CADASTRO AUTOMÁTICO (PRESERVADO) ---
             if c_sel == "*** NOVO CLIENTE ***":
                 if not c_nome_novo or not c_zap:
                     st.error("⚠️ Para novos clientes, Nome e WhatsApp são obrigatórios!")
                     st.stop()
                 
                 nome_cli = c_nome_novo.strip()
-                
                 if not modo_teste:
                     try:
                         aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
                         dados_cli_atuais = aba_cli_sheet.get_all_values()
-                        
-                        # Verifica se o nome já existe (ignorando maiúsculas e espaços)
                         nomes_no_banco = [linha[1].strip().upper() for linha in dados_cli_atuais[1:]]
                         
                         if nome_cli.upper() in nomes_no_banco:
-                            # Se já existe, recupera o código dele
                             idx = nomes_no_banco.index(nome_cli.upper())
                             cod_cli = dados_cli_atuais[idx + 1][0]
                         else:
-                            # Se é novo, cria o código e cadastra
                             prox_num_c = len(dados_cli_atuais)
                             cod_cli = f"CLI-{prox_num_c:03d}"
-                            
-                            linha_novo_cliente = [
-                                cod_cli, nome_cli, c_zap.strip(), "", 
-                                datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"
-                            ]
-                            # Gravação precisa na aba Clientes
-                            aba_cli_sheet.update(f"A{prox_num_c + 1}", [linha_novo_cliente], value_input_option='USER_ENTERED')
+                            linha_novo_cliente = [cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"]
+                            aba_cli_sheet.append_row(linha_novo_cliente, value_input_option='USER_ENTERED')
                             st.toast(f"👤 {nome_cli} cadastrada automaticamente!")
                     except Exception as e:
-                        st.error(f"Erro no cadastro automático: {e}")
-                        st.stop()
+                        st.error(f"Erro no cadastro: {e}"); st.stop()
                 else:
                     cod_cli = "CLI-TESTE"
             else:
-                # Cliente antigo: extrai o código do selectbox
                 cod_cli = c_sel.split(" - ")[0]
                 nome_cli = banco_de_clientes[cod_cli]['nome']
 
@@ -184,20 +172,24 @@ with aba_venda:
             novo_log = {
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Hora": datetime.now().strftime("%H:%M:%S"),
-                "Cliente": nome_cli,
-                "Produto": nome_prod,
-                "QT": qtd_v,
-                "Pagamento": metodo,
-                "Total": f"R$ {t_liq:.2f}"
+                "Cliente": nome_cli, "Produto": nome_prod, "QT": qtd_v, "Pagamento": metodo, "Total": f"R$ {t_liq:.2f}"
             }
             st.session_state['historico_sessao'].insert(0, novo_log)
 
-            # --- 4. MOTOR DE GRAVAÇÃO REAL DA VENDA (MANTIDO) ---
+            # --- 4. MOTOR DE GRAVAÇÃO COM BUSCA POR 'TOTAIS' (RESOLVE O PROBLEMA DAS LINHAS) ---
             if not modo_teste:
                 try:
                     aba_v_sheet = planilha_mestre.worksheet("VENDAS")
-                    proxima_linha = len(aba_v_sheet.col_values(2)) + 1
                     
+                    # 🔍 Localiza a linha "TOTAIS" para empurrar ela para baixo
+                    try:
+                        celula_totais = aba_v_sheet.find("TOTAIS")
+                        indice_insercao = celula_totais.row
+                    except:
+                        # Plano B se a palavra TOTAIS sumir: usa a última linha preenchida
+                        indice_insercao = len(aba_v_sheet.col_values(2)) + 1
+                    
+                    # Variáveis para a Linha (Sua lógica preservada)
                     cod_prod = p_sel.split(" - ")[0]
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     val_a_vista = t_liq if eh_parc == "Não" else 0
@@ -216,13 +208,15 @@ with aba_venda:
                         saldo_dev, dt_prox, status, f_atraso
                     ]
                     
-                    aba_v_sheet.update(f"A{proxima_linha}", [linha_nova], value_input_option='USER_ENTERED')
+                    # 🚀 A MÁGICA: insere antes do TOTAIS e empurra tudo
+                    aba_v_sheet.insert_row(linha_nova, index=indice_insercao, value_input_option='USER_ENTERED')
+                    
                     st.cache_resource.clear()
-                    st.success("✅ Venda e Cliente processados com sucesso!")
+                    st.success(f"✅ Venda gravada! A linha TOTAIS agora está na {indice_insercao + 1}")
                 except Exception as erro:
                     st.error(f"❌ Erro Planilha: {erro}")
             
-            # --- 5. RECIBO (MANTIDO) ---
+            # --- 5. RECIBO (MANTIDO COMPLETO) ---
             recibo = f"*RECIBO DE COMPRA*\n\n*Nome da cliente:* {nome_cli}\n*Data:* {datetime.now().strftime('%d/%m/%Y')}\n*Vendedor(a):* {vendedor}\n\n*Itens adquiridos:*\n- {qtd_v}x {nome_prod} = R$ {qtd_v*val_v:.2f}"
             if desc_v > 0: recibo += f"\n-- R$ {desc_v:.2f} de desconto = R$ {t_liq:.2f}"
             if metodo == "Sweet Flex":
@@ -439,6 +433,7 @@ with aba_clientes:
                         aba_cli_sheet.update(f"A{prox_c}", [l_cli], value_input_option='USER_ENTERED')
                         st.success(f"✅ {n_cli} cadastrada!"); st.cache_resource.clear()
                     except Exception as e: st.error(f"Erro: {e}")
+
 
 
 
