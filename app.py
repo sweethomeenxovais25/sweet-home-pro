@@ -182,24 +182,23 @@ with aba_venda:
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             
-           # 2. Lógica de Captura (Ajustada para os nomes reais do seu banco)
+            # 2. Lógica de Captura (Tradução de Telefone/Fone para WhatsApp)
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
-                # Extrai o ID que vem antes do " - " (Ex: 722911)
                 id_cliente = c_sel.split(" - ")[0].strip()
+                dados_cli = banco_de_clientes.get(id_cliente, {})
                 
-                # Busca direta no banco usando o ID como chave
-                dados_cli = banco_de_clientes.get(id_cliente)
-                
-                if dados_cli:
-                    # Agora usamos o nome exato que apareceu no Raio-X: 'fone'
-                    telefone_sugerido = dados_cli.get('fone', "")
-
+                # A lógica que deu certo antes: tentamos as variações da planilha
+                # O seu debug mostrou 'fone', então ele é a nossa prioridade!
+                telefone_sugerido = dados_cli.get('fone') or \
+                                    dados_cli.get('TELEFONE') or \
+                                    dados_cli.get('whatsapp', "")
+            
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
             
-            # O key é essencial para o Streamlit atualizar o campo na tela
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"ajuste_final_{c_sel}")
+            # O 'key' é o que faz o número "pular" na tela ao trocar o cliente
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"venda_zap_{c_sel}")
 
         with col_dir:
             st.write("📦 **Produto**")
@@ -489,6 +488,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
