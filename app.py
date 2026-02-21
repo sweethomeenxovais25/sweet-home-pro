@@ -150,16 +150,77 @@ def carregar_dados():
 banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full = carregar_dados()
 
 # ==========================================
-# 3. INTERFACE E BARRA LATERAL
+# 3. INTERFACE E NAVEGAÇÃO ESTÁVEL ⚓
 # ==========================================
-st.sidebar.title("🛠️ Painel Sweet Home")
-modo_teste = st.sidebar.toggle("🔬 Modo de Teste", value=False)
-if st.sidebar.button("🔄 Sincronizar Planilha"):
-    st.cache_resource.clear()
-    st.rerun()
 
-# Criação das abas (Variáveis definidas antes de usar)
-aba_venda, aba_financeiro, aba_estoque, aba_clientes = st.tabs(["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"])
+with st.sidebar:
+    st.title("🛠️ Painel Sweet Home")
+    
+    # Esta é a ÂNCORA MASTER. A 'key' impede que o site mude de aba sozinho.
+    menu_selecionado = st.radio(
+        "Navegação",
+        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"],
+        key="navegacao_principal_sweet"
+    )
+    
+    st.divider()
+    modo_teste = st.toggle("🔬 Modo de Teste", value=False, key="toggle_teste")
+    
+    if st.button("🔄 Sincronizar Planilha", key="btn_sincronizar"):
+        st.cache_resource.clear()
+        st.rerun()
+
+# --- LÓGICA DE DISTRIBUIÇÃO DAS TELAS ---
+# Substituímos o st.tabs por condicionais 'if' para garantir que o scroll e o estado se mantenham.
+
+if menu_selecionado == "🛒 Vendas":
+    st.subheader("🛒 Registro de Venda")
+    
+    # Criamos o formulário com uma key única para não pular ao digitar
+    with st.form("form_venda_final", clear_on_submit=True):
+        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"], key="sel_metodo_pg")
+        
+        detalhes_p = []; n_p = 1 
+        if metodo == "Sweet Flex":
+            n_p = st.number_input("Número de Parcelas", 1, 12, 1, key="num_parcelas_flex")
+            cols_parc = st.columns(n_p)
+            for i in range(n_p):
+                with cols_parc[i]:
+                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_data_{i}")
+                    detalhes_p.append(dt.strftime("%d/%m/%Y"))
+
+        col_esq, col_dir = st.columns(2)
+
+        with col_esq:
+            st.write("👤 **Dados da Cliente**")
+            # Adicionada KEY para o seletor de cliente não resetar ao clicar no Zap
+            c_sel = st.selectbox(
+                "Selecionar Cliente", 
+                ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()],
+                key="venda_cliente_select"
+            )
+            
+            telefone_sugerido = ""
+            if c_sel != "*** NOVO CLIENTE ***":
+                id_cliente = c_sel.split(" - ")[0].strip()
+                if id_cliente in banco_de_clientes:
+                    telefone_sugerido = banco_de_clientes[id_cliente].get('fone', "")
+
+            c_nome_novo = st.text_input("Nome Completo (se novo)", key="venda_nome_novo")
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_input_{c_sel}")
+
+        with col_dir:
+            st.write("📦 **Produto**")
+            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()], key="venda_prod_select")
+            cc1, cc2, cc3 = st.columns(3)
+            qtd_v = cc1.number_input("Qtd", 1, key="venda_qtd")
+            val_v = cc2.number_input("Preço Un.", 0.0, key="venda_preco")
+            desc_v = cc3.number_input("Desconto (R$)", 0.0, key="venda_desc")
+            vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor")
+
+        enviar = st.form_submit_button("Finalizar Venda 🚀")
+        
+        # ... (O restante do seu código de processamento do 'if enviar' continua igual abaixo daqui)
 
 # ==========================================
 # --- ABA 1: VENDAS (SISTEMA INTEGRAL) ---
@@ -546,6 +607,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
