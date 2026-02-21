@@ -259,8 +259,35 @@ if menu_selecionado == "🛒 Vendas":
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
-                    # LINHA EXATAMENTE IGUAL AO SEU ORIGINAL
-                    linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, cod_p, nome_p, custo_un, qtd_v, val_v, desc_percentual, "", "", "", "", metodo, eh_parc, n_p, "", t_liq/n_p if eh_parc=="Sim" else 0, t_liq if eh_parc=="Não" else 0, "", detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", "Pendente" if eh_parc=="Sim" else "Pago", f_atraso]
+                    # --- 🪄 FÓRMULAS DINÂMICAS DO ROBÔ ---
+                    f_k = '=SE(INDIRETO("I"&LIN())=""; ""; INDIRETO("I"&LIN()) * (1 - INDIRETO("J"&LIN())))'
+                    f_l = '=SE(INDIRETO("H"&LIN())=""; ""; INDIRETO("H"&LIN()) * INDIRETO("K"&LIN()))'
+                    f_m = '=SE(INDIRETO("L"&LIN())=""; ""; INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())))'
+                    f_n = '=SE(INDIRETO("L"&LIN())=""; ""; SEERRO(INDIRETO("M"&LIN()) / INDIRETO("L"&LIN()); ""))'
+                    
+                    linha = [
+                        "",                                 # 0: A (Vazio/ID)
+                        datetime.now().strftime("%d/%m/%Y"),# 1: B (Data)
+                        cod_cli,                            # 2: C (Cód Cliente)
+                        nome_cli,                           # 3: D (Nome)
+                        cod_p,                              # 4: E (Cód Prod)
+                        nome_p,                             # 5: F (Produto)
+                        custo_un,                           # 6: G (Custo Un)
+                        qtd_v,                              # 7: H (Qtd)
+                        val_v,                              # 8: I (Val Un)
+                        desc_percentual,                    # 9: J (Desc %)
+                        f_k, f_l, f_m, f_n,                 # 10 a 13: Colunas K, L, M, N (Fórmulas Automáticas)
+                        metodo,                             # 14: O (Método)
+                        eh_parc,                            # 15: P (É Parcelado?)
+                        n_p,                                # 16: Q (Nº Parcelas)
+                        "",                                 # 17: R
+                        t_liq/n_p if eh_parc=="Sim" else 0, # 18: S (Valor da Parcela)
+                        t_liq if eh_parc=="Não" else 0,     # 19: T (Total Pago Agora)
+                        t_liq if eh_parc=="Sim" else 0,     # 20: U (SALDO DEVEDOR 💰)
+                        detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", # 21: V (Vencimento)
+                        "Pendente" if eh_parc=="Sim" else "Pago",                 # 22: W (Status)
+                        f_atraso                            # 23: X (Fórmula Atraso)
+                    ]
                     
                     aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
                     st.success("✅ Venda registrada com sucesso!")
@@ -268,6 +295,7 @@ if menu_selecionado == "🛒 Vendas":
                 except Exception as e:
                     st.error(f"Erro ao registrar: {e}")
             else:
+                # O aviso do modo teste são e salvo!
                 st.info("🧪 Modo Teste: Simulação realizada com sucesso!")
 
             # --- 5. RECIBO PADRÃO SWEET HOME 🌸 ---
@@ -542,6 +570,7 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
