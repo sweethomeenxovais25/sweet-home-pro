@@ -489,54 +489,62 @@ with aba_clientes:
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
         
-    # ÁREA 3: ATUALIZAÇÃO DE DADOS (NOVIDADE 🚀)
+    # ÁREA 3: ATUALIZAÇÃO DE DADOS (VERSÃO BLINDADA 🛡️)
     with st.expander("🔄 Atualizar Dados de Cliente Existente", expanded=False):
         # 1. Selecionar quem será atualizado
-        # Usamos o DataFrame para garantir que a lista esteja sempre fresca
         lista_clientes_edit = [f"{row[0]} - {row[1]}" for row in df_clientes_full.values]
         escolha = st.selectbox("Selecione a Cliente para editar", ["---"] + lista_clientes_edit, key="sel_edit_cli")
 
         if escolha != "---":
             id_edit = escolha.split(" - ")[0]
             
-            # Localiza os dados atuais no DataFrame para preencher o formulário
+            # Localiza os dados atuais no DataFrame
             dados_atuais = df_clientes_full[df_clientes_full.iloc[:, 0] == id_edit].iloc[0]
 
+            # ABRIMOS O FORMULÁRIO AQUI
             with st.form("form_atualizar_cli"):
                 st.info(f"Editando: {id_edit} - {dados_atuais[1]}")
                 
                 col1, col2 = st.columns(2)
-                # Preenchemos o 'value' com o que já existe na planilha
-                novo_nome = col1.text_input("Nome Completo", value=dados_atuais[1])
-                novo_zap = col2.text_input("WhatsApp", value=dados_atuais[2])
+                novo_nome = col1.text_input("Nome Completo", value=str(dados_atuais[1]))
+                novo_zap = col2.text_input("WhatsApp", value=str(dados_atuais[2]))
                 
-                novo_end = st.text_input("Endereço", value=dados_atuais[3] if pd.notna(dados_atuais[3]) else "")
-                novo_vale = st.number_input("Vale Desconto", value=float(dados_atuais[5]) if pd.notna(dados_atuais[5]) else 0.0)
+                # Tratamento para evitar o erro de 'float' se a célula estiver estranha
+                val_original = dados_atuais[5]
+                try:
+                    # Se for vazio ou erro, vira 0.0, senão vira número
+                    valor_limpo = float(val_original) if (pd.notna(val_original) and str(val_original).strip() != "") else 0.0
+                except:
+                    valor_limpo = 0.0
 
-                if st.form_submit_button("Salvar Alterações 💾"):
+                novo_end = st.text_input("Endereço", value=str(dados_atuais[3]) if pd.notna(dados_atuais[3]) else "")
+                novo_vale = st.number_input("Vale Desconto", value=valor_limpo)
+
+                # O BOTÃO PRECISA ESTAR AQUI DENTRO (Recuado com o 'with')
+                botao_salvar = st.form_submit_button("Salvar Alterações 💾", use_container_width=True)
+
+                if botao_salvar:
                     try:
                         aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
-                        # Busca a célula onde está o ID para saber qual linha editar
                         celula = aba_cli_sheet.find(id_edit)
                         num_linha = celula.row
 
-                        # Atualiza as colunas específicas (B, C, D e F)
-                        # B=2 (Nome), C=3 (Zap), D=4 (Endereço), F=6 (Vale)
+                        # Atualiza as colunas (B, C, D, F, H)
                         aba_cli_sheet.update_cell(num_linha, 2, novo_nome.strip())
                         aba_cli_sheet.update_cell(num_linha, 3, novo_zap.strip())
                         aba_cli_sheet.update_cell(num_linha, 4, novo_end.strip())
                         aba_cli_sheet.update_cell(num_linha, 6, novo_vale)
                         
-                        # Atualiza o Status (H=8)
                         novo_status = "Completo" if novo_end.strip() else "Incompleto"
                         aba_cli_sheet.update_cell(num_linha, 8, novo_status)
 
-                        st.success(f"✅ Dados de {novo_nome} atualizados com sucesso!")
+                        st.success(f"✅ Dados de {novo_nome} atualizados!")
                         st.cache_resource.clear()
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"Erro ao atualizar: {e}")
+                        st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
