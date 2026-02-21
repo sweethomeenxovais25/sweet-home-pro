@@ -6,16 +6,57 @@ import os
 from datetime import datetime
 import urllib.parse
 import streamlit as st
-import streamlit as st
-# ... outros imports ...
+from datetime import datetime
+import pandas as pd
+import urllib.parse
 
-# DEVE SER A PRIMEIRA LINHA DEPOIS DOS IMPORTS:
+# 1. CONFIGURAÇÃO DA PÁGINA (Sempre a primeira linha funcional)
 st.set_page_config(
-    page_title="Sweet Home Pro",
-    page_icon="logo_sweet.png", # O Favicon que você queria!
-    layout="wide"               # Mantém o seu layout atual
+    page_title="Sweet Home Enxovais",
+    page_icon="logo_sweet.png", 
+    layout="wide"
 )
-# ... (seus outros imports como pandas, gspread, datetime, etc) ...
+
+# --- LÓGICA DE LOGIN COM LOGO ---
+if 'logado' not in st.session_state:
+    st.session_state['logado'] = False
+
+if not st.session_state['logado']:
+    # Centralização da Logo
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        try:
+            st.image("logo_sweet.png", use_container_width=True)
+        except:
+            st.warning("🌸 Sweet Home Enxovais (Logo não carregada)")
+        
+        st.markdown("<h2 style='text-align: center;'>Sweet Home Enxovais</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Sistema de Gestão Interna</p>", unsafe_allow_html=True)
+
+        # Formulário de Login
+        with st.form("login_form"):
+            usuario = st.text_input("Usuário")
+            senha = st.text_input("Senha", type="password")
+            entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
+            
+            if entrar:
+                # Substitua 'sua_senha_aqui' pela senha que você definiu nos Secrets
+                if usuario == "Bia" and senha == st.secrets["password"]:
+                    st.session_state['logado'] = True
+                    st.success("Acesso liberado!")
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos")
+    st.stop() # Para o código aqui se não estiver logado
+
+# --- SE ESTIVER LOGADO, O RESTO DO SITE CONTINUA ABAIXO ---
+# Adicione a logo na barra lateral também para ficar bonito
+with st.sidebar:
+    try:
+        st.image("logo_sweet.png", use_container_width=True)
+    except:
+        st.write("🌸 **Sweet Home**")
+    st.divider()
 
 # ==========================================
 # 🔒 FASE 1: TELA DE LOGIN & SEGURANÇA
@@ -548,6 +589,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
