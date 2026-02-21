@@ -235,7 +235,10 @@ with aba_venda:
             st.session_state['historico_sessao'].insert(0, {
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Hora": datetime.now().strftime("%H:%M:%S"),
-                "Cliente": nome_cli, "Produto": nome_p, "Total": f"R$ {t_liq:.2f}"
+                "Cliente": nome_cli, 
+                "Produto": nome_p, 
+                "Pagto": metodo,  # <--- NOVA COLUNA ADICIONADA
+                "Total": f"R$ {t_liq:.2f}"
             })
 
             # --- 4. ENVIO PARA PLANILHA (SÓ SE NÃO FOR TESTE) ---
@@ -536,6 +539,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
