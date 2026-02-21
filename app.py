@@ -182,35 +182,31 @@ with aba_venda:
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             
-            # 2. Lógica de Captura Inteligente
+            # 2. Lógica de Captura Inteligente (Busca Direta por Varredura)
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
-                # Tentativa 1: Pegar pelo código (split)
-                cod_tentativa = c_sel.split(" - ")[0].strip()
-                dados_cli = banco_de_clientes.get(cod_tentativa)
+                # Extraímos o nome que está depois do " - "
+                nome_selecionado = c_sel.split(" - ")[1].strip() if " - " in c_sel else c_sel
                 
-                # Tentativa 2: Se não achou pelo código, varre o banco pelo nome
-                if not dados_cli:
-                    nome_procurado = c_sel.split(" - ")[1].strip() if " - " in c_sel else c_sel
-                    for k, v in banco_de_clientes.items():
-                        if v.get('nome') == nome_procurado:
-                            dados_cli = v
-                            break
-                
-                # Se achou os dados, pega a Coluna C (índice 2 na lista de valores)
-                if dados_cli:
-                    valores = list(dados_cli.values())
-                    # Tentamos nomes comuns ou a 3ª posição (Coluna C)
-                    telefone_sugerido = dados_cli.get('zap') or \
-                                        dados_cli.get('WhatsApp') or \
-                                        dados_cli.get('telefone') or \
-                                        (valores[2] if len(valores) > 2 else "")
+                # Percorremos o banco inteiro procurando esse nome
+                for k, v in banco_de_clientes.items():
+                    # v é a "ficha" do cliente. Vamos ver se o nome bate.
+                    if v.get('nome') == nome_selecionado:
+                        # Achamos! Agora pegamos o valor da Coluna C.
+                        # Transformamos a ficha em lista para pegar a 3ª posição (índice 2)
+                        valores = list(v.values())
+                        
+                        # Tenta pegar por nomes prováveis ou pela posição física (Coluna C)
+                        telefone_sugerido = v.get('zap') or v.get('WhatsApp') or v.get('telefone')
+                        if not telefone_sugerido and len(valores) > 2:
+                            telefone_sugerido = valores[2] # 0=Cod, 1=Nome, 2=Zap
+                        break
 
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
             
-            # O 'key' garante que o Streamlit limpe a caixa e coloque o novo número
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"force_zap_{c_sel}")
+            # O key é o que limpa a memória do campo para o novo número entrar
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"refresh_zap_{c_sel}")
 
         with col_dir:
             st.write("📦 **Produto**")
@@ -500,6 +496,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
