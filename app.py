@@ -285,7 +285,7 @@ with aba_venda:
 
     # --- SEÇÃO REGISTROS RECENTES VISÍVEL ---
     st.divider()
-    st.subheader("📝 Registros Realizados Agora")
+    st.subheader("📝 Histórico de Registros") # <--- NOMENCLATURA AJUSTADA
     if st.session_state['historico_sessao']:
         st.dataframe(st.session_state['historico_sessao'], use_container_width=True, hide_index=True)
         if st.button("Limpar Histórico Local 🗑️"):
@@ -539,6 +539,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
