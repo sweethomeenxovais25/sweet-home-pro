@@ -30,7 +30,7 @@ if not st.session_state['autenticado']:
             
             if submit:
                 # ATENÇÃO: Senha provisória. No próximo passo vamos esconder isso!
-                if submit:
+               if submit:
                 # 1. Puxa a lista de usuários do cofre
                 usuarios_permitidos = st.secrets["usuarios"]
                 
@@ -44,7 +44,7 @@ if not st.session_state['autenticado']:
                     else:
                         st.error("❌ Senha incorreta.")
                 else:
-                    st.error("❌ Usuário não encontrado.") 
+                    st.error("❌ Usuário não encontrado.")
                     st.session_state['autenticado'] = True
                     st.rerun() # Recarrega a página agora com acesso liberado
                 else:
@@ -478,6 +478,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
