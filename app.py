@@ -30,7 +30,21 @@ if not st.session_state['autenticado']:
             
             if submit:
                 # ATENÇÃO: Senha provisória. No próximo passo vamos esconder isso!
-                if usuario == "bia" and senha == "sweet2026": 
+                if submit:
+                # 1. Puxa a lista de usuários do cofre
+                usuarios_permitidos = st.secrets["usuarios"]
+                
+                # 2. Verifica se o usuário digitado existe no cofre
+                if usuario in usuarios_permitidos:
+                    # 3. Verifica se a senha bate com a do cofre
+                    if usuarios_permitidos[usuario] == senha:
+                        st.session_state['autenticado'] = True
+                        st.session_state['usuario_logado'] = usuario # Guarda quem logou
+                        st.rerun()
+                    else:
+                        st.error("❌ Senha incorreta.")
+                else:
+                    st.error("❌ Usuário não encontrado.") 
                     st.session_state['autenticado'] = True
                     st.rerun() # Recarrega a página agora com acesso liberado
                 else:
@@ -464,6 +478,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
