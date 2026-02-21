@@ -175,8 +175,8 @@ if menu_selecionado == "🛒 Vendas":
             cols_parc = st.columns(n_p)
             for i in range(n_p):
                 with cols_parc[i]:
-                    # KEY dinâmica para as datas das parcelas
-                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_data_parc_{i}")
+                    # 🇧🇷 O PARÂMETRO format="DD/MM/YYYY" DEIXA O CALENDÁRIO NO PADRÃO BRASIL
+                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), format="DD/MM/YYYY", key=f"vd_data_parc_{i}")
                     detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
         col_esq, col_dir = st.columns(2)
@@ -534,4 +534,5 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
