@@ -196,22 +196,43 @@ with aba_financeiro:
     
     if not df_vendas_hist.empty:
         try:
-            # L=11, M=12, U=20 (Índices baseados na sua planilha)
+            # L=11, M=12, U=20
             vendas_brutas = df_vendas_hist.iloc[:, 11].apply(limpar_v).sum()
-            lucro_estimado = df_vendas_hist.iloc[:, 12].apply(limpar_v).sum()
-            saldo_pendente = df_vendas_hist.iloc[:, 20].apply(limpar_v).sum()
-            
-            # Cálculo do que já caiu no caixa
-            ja_recebido = vendas_brutas - saldo_pendente
+            lucro_bruto = df_vendas_hist.iloc[:, 12].apply(limpar_v).sum()
+            saldo_devedor = df_vendas_hist.iloc[:, 20].apply(limpar_v).sum()
+            total_recebido = vendas_brutas - saldo_devedor
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Vendas Totais (L)", f"R$ {vendas_brutas:,.2f}")
-            c2.metric("Lucro Bruto (M)", f"R$ {lucro_estimado:,.2f}")
-            c3.metric("Total Recebido", f"R$ {ja_recebido:,.2f}")
-            c4.metric("Saldo na Rua (U)", f"R$ {saldo_pendente:,.2f}", delta="- Pendente", delta_color="inverse")
+            # --- LÓGICA DE RISCO (O Termômetro) ---
+            percentual_pendente = (saldo_devedor / vendas_brutas) * 100 if vendas_brutas > 0 else 0
             
+            if percentual_pendente <= 20:
+                status_cor = "green"
+                status_texto = "✨ Saúde Financeira: EXCELENTE"
+            elif percentual_pendente <= 40:
+                status_cor = "orange"
+                status_texto = "⚠️ Saúde Financeira: ATENÇÃO (Cobrar mais)"
+            else:
+                status_cor = "red"
+                status_texto = "🚨 Saúde Financeira: CRÍTICA (Risco de Caixa)"
+
+            # --- EXIBIÇÃO DAS MÉTRICAS ---
+            c1, c2, c3, c4 = st.columns(4)
+            
+            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}")
+            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}", delta="Margem Real")
+            c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro no Bolso")
+            
+            # Delta inverse: Se subir fica vermelho, se descer fica verde
+            c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", 
+                      delta=f"{percentual_pendente:.1f}% do total", 
+                      delta_color="inverse")
+
+            # Barra de Status Visual
+            st.markdown(f"### <span style='color:{status_cor}'>{status_texto}</span>", unsafe_allow_html=True)
+            st.progress(min(percentual_pendente/100, 1.0)) # Uma barrinha visual de 0 a 100%
+
         except Exception as e:
-            st.warning(f"Erro ao processar colunas L, M ou U. Verifique a estrutura da planilha. (Detalhe: {e})")
+            st.warning(f"Aguardando dados para processar o painel. (Erro: {e})")
 
     st.divider()
 
@@ -360,6 +381,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
