@@ -488,8 +488,8 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
-
-# ÁREA 3: ATUALIZAÇÃO DE DADOS (NOVIDADE 🚀)
+        
+    # ÁREA 3: ATUALIZAÇÃO DE DADOS (NOVIDADE 🚀)
     with st.expander("🔄 Atualizar Dados de Cliente Existente", expanded=False):
         # 1. Selecionar quem será atualizado
         # Usamos o DataFrame para garantir que a lista esteja sempre fresca
@@ -537,6 +537,8 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao atualizar: {e}")
+
+
 
 
 
