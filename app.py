@@ -170,12 +170,24 @@ with aba_venda:
                 dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_{i}")
                 detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
-    with st.form("form_venda_final", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
+    with c1:
             st.write("👤 **Dados da Cliente**")
+            
+            # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
-            c_nome_novo = st.text_input("Nome Completo (se novo)"); c_zap = st.text_input("WhatsApp")
+            
+            # 2. Lógica para capturar o Telefone Automático
+            telefone_sugerido = ""
+            if c_sel != "*** NOVO CLIENTE ***":
+                cod_cli = c_sel.split(" - ")[0]
+                # Busca o telefone no seu banco. Ajuste 'telefone' para o nome da chave que você usa (ex: 'zap' ou 'contato')
+                telefone_sugerido = banco_de_clientes[cod_cli].get('telefone', "")
+            
+            # 3. Inputs do Formulário
+            c_nome_novo = st.text_input("Nome Completo (se novo)")
+            
+            # O 'value' é o segredo: se tiver telefone no banco, ele já nasce preenchido
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido)
         with c2:
             st.write("📦 **Produto**")
             p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()])
@@ -468,6 +480,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
