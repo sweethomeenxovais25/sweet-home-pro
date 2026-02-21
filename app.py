@@ -150,8 +150,14 @@ with aba_venda:
                 cod_cli = c_sel.split(" - ")[0]; nome_cli = banco_de_clientes[cod_cli]['nome']
 
             # --- PROCESSAMENTO (DESCONTO DECIMAL + TOTAIS) ---
-            v_bruto = qtd_v * val_v; t_liq = v_bruto - desc_v
+            v_bruto = qtd_v * val_v
+            t_liq = v_bruto - desc_v
             desc_percentual = desc_v / v_bruto if v_bruto > 0 else 0
+            
+            # BUSCANDO O CUSTO (Para a fórmula de Lucro do Sheets funcionar)
+            cod_p = p_sel.split(" - ")[0]
+            # Usa o custo se existir no banco, senão manda 0
+            custo_un = banco_de_produtos[cod_p].get('custo', 0) if cod_p in banco_de_produtos else 0
             
             if not modo_teste:
                 try:
@@ -160,10 +166,37 @@ with aba_venda:
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
-                    linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, p_sel.split(" - ")[0], p_sel.split(" - ")[1].strip(), "", qtd_v, val_v, desc_percentual, "", t_liq, "", "", metodo, eh_parc, n_p, t_liq if eh_parc == "Não" else 0, t_liq/n_p if eh_parc == "Sim" else 0, t_liq if eh_parc == "Não" else 0, t_liq if eh_parc == "Sim" else 0, detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else "", "Pendente" if eh_parc == "Sim" else "Pago", f_atraso]
+                    linha = [
+                        "",                                          # A: Vazio
+                        datetime.now().strftime("%d/%m/%Y"),         # B: Data
+                        cod_cli,                                     # C: Cód Cliente
+                        nome_cli,                                    # D: Nome Cliente
+                        cod_p,                                       # E: Cód Prod
+                        p_sel.split(" - ")[1].strip(),               # F: Nome Prod
+                        custo_un,                                    # G: CUSTO UNITÁRIO (Adicionado!)
+                        qtd_v,                                       # H: Qtd
+                        val_v,                                       # I: Preço Un
+                        desc_percentual,                             # J: Desc %
+                        "",                                          # K: Valor com Desc (FÓRMULA)
+                        "",                                          # L: TOTAL (FÓRMULA)
+                        "",                                          # M: LUCRO (FÓRMULA)
+                        "",                                          # N: MARGEM (FÓRMULA)
+                        metodo,                                      # O: Forma Pagto
+                        eh_parc,                                     # P: Parcelado? (Sim/Não)
+                        n_p,                                         # Q: Nº Parcelas
+                        "",                                          # R: PAG À VISTA (FÓRMULA)
+                        t_liq/n_p if eh_parc == "Sim" else 0,        # S: Valor da Parcela
+                        t_liq if eh_parc == "Não" else 0,            # T: Valor Pago
+                        "",                                          # U: SALDO DEVEDOR (FÓRMULA)
+                        detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else "", # V: Vencimento 1
+                        "Pendente" if eh_parc == "Sim" else "Pago",  # W: Status
+                        f_atraso                                     # X: Fórmula Atraso
+                    ]
+                    
                     aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
                     st.cache_resource.clear()
-                except: st.error("Erro ao localizar linha TOTAIS.")
+                except Exception as e: 
+                    st.error(f"Erro ao registrar: {e}")
 
             # --- REGISTROS RECENTES (MEMÓRIA DA SESSÃO) ---
             st.session_state['historico_sessao'].insert(0, {
@@ -381,6 +414,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
