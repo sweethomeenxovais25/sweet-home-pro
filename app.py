@@ -28,11 +28,21 @@ ESPECIFICACOES = [
 
 @st.cache_resource
 def conectar_google():
-    if not os.path.exists('credenciais.json'): return None
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name('credenciais.json', ESPECIFICACOES)
-        return gspread.authorize(creds).open_by_key(ID_PLANILHA)
-    except: return None
+        # Tenta ler do "cofre" (Secrets) que você configurou no Streamlit
+        if "gcp_service_account" in st.secrets:
+            creds_info = st.secrets["gcp_service_account"]
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
+            return gspread.authorize(creds).open_by_key(ID_PLANILHA)
+        else:
+            # Fallback para o seu computador (se o arquivo existir localmente)
+            if os.path.exists('credenciais.json'):
+                creds = ServiceAccountCredentials.from_json_keyfile_name('credenciais.json', ESPECIFICACOES)
+                return gspread.authorize(creds).open_by_key(ID_PLANILHA)
+            return None
+    except Exception as e:
+        st.error(f"Erro detalhado de conexão: {e}")
+        return None
 
 planilha_mestre = conectar_google()
 
@@ -511,4 +521,5 @@ with aba_clientes:
                             st.success(f"✅ {novo_nome_cli} cadastrada como {codigo_gerado}!")
                             st.cache_resource.clear()
                     except Exception as e:
+
                         st.error(f"Erro ao salvar: {e}")
