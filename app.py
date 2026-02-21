@@ -34,18 +34,19 @@ if not st.session_state['logado']:
             entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
             
             if entrar:
-                senha_bia = st.secrets.get("Bia_CEO")
-                senha_admin = st.secrets.get("admin")
+                # O .get garante que, se não existir no Secret, ele não trave o app
+                senha_bia = str(st.secrets.get("Bia_CEO", "NaoDefinido"))
+                senha_admin = str(st.secrets.get("admin", "NaoDefinido"))
 
-                if usuario.lower() == "bia" and senha == senha_bia:
+                # Verificação (Note o uso do .strip() na senha também para limpar espaços)
+                if usuario.lower() == "bia" and senha.strip() == senha_bia.strip():
                     st.session_state['logado'] = True
                     st.rerun()
-                elif usuario.lower() == "admin" and senha == senha_admin:
+                elif usuario.lower() == "admin" and senha.strip() == senha_admin.strip():
                     st.session_state['logado'] = True
                     st.rerun()
                 else:
                     st.error("Dados incorretos. Verifique os Secrets.")
-    st.stop() # Interrompe o código aqui para quem não logou
 
 # 4. CONFIGURAÇÃO APÓS LOGIN (Barra Lateral)
 with st.sidebar:
@@ -587,6 +588,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
