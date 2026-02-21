@@ -182,12 +182,18 @@ with aba_venda:
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             
-            # 2. Lógica para capturar o Telefone Automático (Usa 'zap' ou 'contato' conforme seu banco)
+            # 2. Lógica para capturar o Telefone Automático
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
                 cod_cli_temp = c_sel.split(" - ")[0]
-                # Aqui ele tenta pegar o telefone cadastrado. Se não achar, fica vazio.
-                telefone_sugerido = banco_de_clientes[cod_cli_temp].get('telefone', "")
+                
+                # Pega os dados desse cliente específico
+                dados_do_cliente = banco_de_clientes.get(cod_cli_temp, {})
+                
+                # Tenta buscar por 'whatsapp', 'zap' ou 'telefone' (o que vier primeiro)
+                telefone_sugerido = dados_do_cliente.get('whatsapp') or \
+                                    dados_do_cliente.get('zap') or \
+                                    dados_do_cliente.get('telefone') or ""
             
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
@@ -499,6 +505,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
