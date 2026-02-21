@@ -10,12 +10,23 @@ from datetime import datetime
 import pandas as pd
 import urllib.parse
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Sempre a primeira linha funcional)
-st.set_page_config(
-    page_title="Gestão Sweet", # O nome que você quer agora
-    page_icon="logo_sweet.png", 
-    layout="wide"
-)
+# 1. TELA DE LOGIN (Só aparece se NÃO estiver logado)
+if not st.session_state['logado']:
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        st.image("logo_sweet.png", use_container_width=True) # LOGO 1: LOGIN
+        # ... resto do form de login ...
+    st.stop()
+
+# 2. CONFIGURAÇÃO APÓS LOGIN (Aparece em TODAS as abas no menu)
+with st.sidebar:
+    st.image("logo_sweet.png", use_container_width=True)     # LOGO 2: MENU LATERAL
+    st.divider()
+    # ... botões de navegação ...
+
+# 3. CORPO DO SITE (Não deve ter st.image da logo aqui no topo)
+# Se houver um st.image("logo_sweet.png") aqui, APAGUE.
+st.title("🏠 Painel de Controle")
 
 # --- LÓGICA DE LOGIN COM LOGO ---
 if 'logado' not in st.session_state:
@@ -609,6 +620,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
