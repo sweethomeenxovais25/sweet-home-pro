@@ -181,26 +181,36 @@ with aba_venda:
             
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
-            st.write(f"Conteúdo do banco: {banco_de_clientes.get(c_sel.split(' - ')[0], 'Não encontrado')}")
             
-            # 2. Lógica para capturar o Telefone Automático
+            # 2. Lógica de Captura Inteligente
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
-                cod_cli_temp = c_sel.split(" - ")[0]
+                # Tentativa 1: Pegar pelo código (split)
+                cod_tentativa = c_sel.split(" - ")[0].strip()
+                dados_cli = banco_de_clientes.get(cod_tentativa)
                 
-                # Pega os dados desse cliente específico
-                dados_do_cliente = banco_de_clientes.get(cod_cli_temp, {})
+                # Tentativa 2: Se não achou pelo código, varre o banco pelo nome
+                if not dados_cli:
+                    nome_procurado = c_sel.split(" - ")[1].strip() if " - " in c_sel else c_sel
+                    for k, v in banco_de_clientes.items():
+                        if v.get('nome') == nome_procurado:
+                            dados_cli = v
+                            break
                 
-                # Tenta buscar por chaves comuns (ajuste se sua planilha usa outro nome)
-                telefone_sugerido = dados_do_cliente.get('whatsapp') or \
-                                    dados_do_cliente.get('zap') or \
-                                    dados_do_cliente.get('telefone') or ""
-            
+                # Se achou os dados, pega a Coluna C (índice 2 na lista de valores)
+                if dados_cli:
+                    valores = list(dados_cli.values())
+                    # Tentamos nomes comuns ou a 3ª posição (Coluna C)
+                    telefone_sugerido = dados_cli.get('zap') or \
+                                        dados_cli.get('WhatsApp') or \
+                                        dados_cli.get('telefone') or \
+                                        (valores[2] if len(valores) > 2 else "")
+
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
             
-            # AQUI ESTÁ A CORREÇÃO: Indentação ajustada e KEY adicionada para forçar o refresh
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_{c_sel}")
+            # O 'key' garante que o Streamlit limpe a caixa e coloque o novo número
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"force_zap_{c_sel}")
 
         with col_dir:
             st.write("📦 **Produto**")
@@ -490,6 +500,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
