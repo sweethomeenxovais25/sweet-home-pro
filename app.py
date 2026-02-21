@@ -127,21 +127,60 @@ with aba_venda:
             vendedor = st.text_input("Vendedor(a)", value="Bia")
 
         if st.form_submit_button("Finalizar Venda 🚀"):
-            # 1. PROCESSAMENTO DE DADOS (Cálculos de valores)
-            nome_cli = c_nome_novo if c_sel == "*** NOVO CLIENTE ***" else banco_de_clientes[c_sel.split(" - ")[0]]['nome']
-            
+            # --- 1. PONTE DE CADASTRO AUTOMÁTICO (NOVIDADE) ---
+            if c_sel == "*** NOVO CLIENTE ***":
+                if not c_nome_novo or not c_zap:
+                    st.error("⚠️ Para novos clientes, Nome e WhatsApp são obrigatórios!")
+                    st.stop()
+                
+                nome_cli = c_nome_novo.strip()
+                
+                if not modo_teste:
+                    try:
+                        aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
+                        dados_cli_atuais = aba_cli_sheet.get_all_values()
+                        
+                        # Verifica se o nome já existe (ignorando maiúsculas e espaços)
+                        nomes_no_banco = [linha[1].strip().upper() for linha in dados_cli_atuais[1:]]
+                        
+                        if nome_cli.upper() in nomes_no_banco:
+                            # Se já existe, recupera o código dele
+                            idx = nomes_no_banco.index(nome_cli.upper())
+                            cod_cli = dados_cli_atuais[idx + 1][0]
+                        else:
+                            # Se é novo, cria o código e cadastra
+                            prox_num_c = len(dados_cli_atuais)
+                            cod_cli = f"CLI-{prox_num_c:03d}"
+                            
+                            linha_novo_cliente = [
+                                cod_cli, nome_cli, c_zap.strip(), "", 
+                                datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"
+                            ]
+                            # Gravação precisa na aba Clientes
+                            aba_cli_sheet.update(f"A{prox_num_c + 1}", [linha_novo_cliente], value_input_option='USER_ENTERED')
+                            st.toast(f"👤 {nome_cli} cadastrada automaticamente!")
+                    except Exception as e:
+                        st.error(f"Erro no cadastro automático: {e}")
+                        st.stop()
+                else:
+                    cod_cli = "CLI-TESTE"
+            else:
+                # Cliente antigo: extrai o código do selectbox
+                cod_cli = c_sel.split(" - ")[0]
+                nome_cli = banco_de_clientes[cod_cli]['nome']
+
+            # --- 2. PROCESSAMENTO DE VALORES (MANTIDO) ---
             valor_bruto_total = qtd_v * val_v
             t_liq = valor_bruto_total - desc_v
             nome_prod = p_sel.split(" - ")[1].strip()
 
-            # --- ✨ A MÁGICA DO DESCONTO AQUI ---
-            # Transformamos o R$ em decimal para a planilha entender como %
+            # --- ✨ A MÁGICA DO DESCONTO (MANTIDA) ---
             if valor_bruto_total > 0:
                 desc_percentual_decimal = desc_v / valor_bruto_total
             else:
                 desc_percentual_decimal = 0
             
-            # 2. 🚀 LÓGICA DE MEMÓRIA DINÂMICA (Para o histórico na tela)
+            # --- 3. LÓGICA DE MEMÓRIA DINÂMICA (MANTIDA) ---
             novo_log = {
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Hora": datetime.now().strftime("%H:%M:%S"),
@@ -153,15 +192,12 @@ with aba_venda:
             }
             st.session_state['historico_sessao'].insert(0, novo_log)
 
-            # 3. MOTOR DE GRAVAÇÃO REAL (SÓ SE NÃO FOR TESTE)
+            # --- 4. MOTOR DE GRAVAÇÃO REAL DA VENDA (MANTIDO) ---
             if not modo_teste:
                 try:
                     aba_v_sheet = planilha_mestre.worksheet("VENDAS")
-                    
-                    # Localiza a próxima linha vazia (contando datas na Coluna B)
                     proxima_linha = len(aba_v_sheet.col_values(2)) + 1
                     
-                    cod_cli = "NOVO" if c_sel == "*** NOVO CLIENTE ***" else c_sel.split(" - ")[0]
                     cod_prod = p_sel.split(" - ")[0]
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     val_a_vista = t_liq if eh_parc == "Não" else 0
@@ -172,7 +208,6 @@ with aba_venda:
                     dt_prox = detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else ""
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
-                    # MONTAGEM DA LINHA (Usando o desconto convertido na posição 9)
                     linha_nova = [
                         "", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, 
                         cod_prod, nome_prod, "", qtd_v, val_v, desc_percentual_decimal, 
@@ -181,13 +216,13 @@ with aba_venda:
                         saldo_dev, dt_prox, status, f_atraso
                     ]
                     
-                    # Gravação precisa usando update
                     aba_v_sheet.update(f"A{proxima_linha}", [linha_nova], value_input_option='USER_ENTERED')
                     st.cache_resource.clear()
-                    st.success("✅ Venda Gravada com Desconto em %!")
+                    st.success("✅ Venda e Cliente processados com sucesso!")
                 except Exception as erro:
                     st.error(f"❌ Erro Planilha: {erro}")
             
+            # --- 5. RECIBO (MANTIDO) ---
             recibo = f"*RECIBO DE COMPRA*\n\n*Nome da cliente:* {nome_cli}\n*Data:* {datetime.now().strftime('%d/%m/%Y')}\n*Vendedor(a):* {vendedor}\n\n*Itens adquiridos:*\n- {qtd_v}x {nome_prod} = R$ {qtd_v*val_v:.2f}"
             if desc_v > 0: recibo += f"\n-- R$ {desc_v:.2f} de desconto = R$ {t_liq:.2f}"
             if metodo == "Sweet Flex":
@@ -377,4 +412,5 @@ with aba_clientes:
                         aba_cli_sheet.update(f"A{prox_c}", [l_cli], value_input_option='USER_ENTERED')
                         st.success(f"✅ {n_cli} cadastrada!"); st.cache_resource.clear()
                     except Exception as e: st.error(f"Erro: {e}")
+
 
