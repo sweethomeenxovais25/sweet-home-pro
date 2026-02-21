@@ -181,6 +181,7 @@ with aba_venda:
             
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+            st.write(f"Conteúdo do banco: {banco_de_clientes.get(c_sel.split(' - ')[0], 'Não encontrado')}")
             
             # 2. Lógica para capturar o Telefone Automático
             telefone_sugerido = ""
@@ -489,6 +490,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
