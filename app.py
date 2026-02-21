@@ -127,21 +127,38 @@ with aba_venda:
             vendedor = st.text_input("Vendedor(a)", value="Bia")
 
         if st.form_submit_button("Finalizar Venda 🚀"):
+            # 1. PROCESSAMENTO DE DADOS (Cálculos de valores)
             nome_cli = c_nome_novo if c_sel == "*** NOVO CLIENTE ***" else banco_de_clientes[c_sel.split(" - ")[0]]['nome']
-            t_liq = (qtd_v * val_v) - desc_v
-            nome_prod = p_sel.split(" - ")[1].strip()
             
+            valor_bruto_total = qtd_v * val_v
+            t_liq = valor_bruto_total - desc_v
+            nome_prod = p_sel.split(" - ")[1].strip()
+
+            # --- ✨ A MÁGICA DO DESCONTO AQUI ---
+            # Transformamos o R$ em decimal para a planilha entender como %
+            if valor_bruto_total > 0:
+                desc_percentual_decimal = desc_v / valor_bruto_total
+            else:
+                desc_percentual_decimal = 0
+            
+            # 2. 🚀 LÓGICA DE MEMÓRIA DINÂMICA (Para o histórico na tela)
             novo_log = {
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Hora": datetime.now().strftime("%H:%M:%S"),
-                "Cliente": nome_cli, "Produto": nome_prod, "QT": qtd_v, "Pagamento": metodo, "Total": f"R$ {t_liq:.2f}"
+                "Cliente": nome_cli,
+                "Produto": nome_prod,
+                "QT": qtd_v,
+                "Pagamento": metodo,
+                "Total": f"R$ {t_liq:.2f}"
             }
             st.session_state['historico_sessao'].insert(0, novo_log)
 
+            # 3. MOTOR DE GRAVAÇÃO REAL (SÓ SE NÃO FOR TESTE)
             if not modo_teste:
                 try:
                     aba_v_sheet = planilha_mestre.worksheet("VENDAS")
-                    # CORREÇÃO: Localizar próxima linha pela Coluna B (Data)
+                    
+                    # Localiza a próxima linha vazia (contando datas na Coluna B)
                     proxima_linha = len(aba_v_sheet.col_values(2)) + 1
                     
                     cod_cli = "NOVO" if c_sel == "*** NOVO CLIENTE ***" else c_sel.split(" - ")[0]
@@ -155,15 +172,19 @@ with aba_venda:
                     dt_prox = detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else ""
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
+                    # MONTAGEM DA LINHA (Usando o desconto convertido na posição 9)
                     linha_nova = [
                         "", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, 
-                        cod_prod, nome_prod, "", qtd_v, val_v, desc_v, 
-                        "", t_liq, "", "", metodo, eh_parc, n_p, val_a_vista, val_parc, entrada, saldo_dev, dt_prox, status, f_atraso
+                        cod_prod, nome_prod, "", qtd_v, val_v, desc_percentual_decimal, 
+                        "", t_liq, "", "", metodo, 
+                        eh_parc, n_p, val_a_vista, val_parc, entrada, 
+                        saldo_dev, dt_prox, status, f_atraso
                     ]
+                    
                     # Gravação precisa usando update
                     aba_v_sheet.update(f"A{proxima_linha}", [linha_nova], value_input_option='USER_ENTERED')
                     st.cache_resource.clear()
-                    st.success("✅ Venda Gravada na Planilha!")
+                    st.success("✅ Venda Gravada com Desconto em %!")
                 except Exception as erro:
                     st.error(f"❌ Erro Planilha: {erro}")
             
@@ -356,3 +377,4 @@ with aba_clientes:
                         aba_cli_sheet.update(f"A{prox_c}", [l_cli], value_input_option='USER_ENTERED')
                         st.success(f"✅ {n_cli} cadastrada!"); st.cache_resource.clear()
                     except Exception as e: st.error(f"Erro: {e}")
+
