@@ -73,20 +73,6 @@ with st.sidebar:
         st.session_state['autenticado'] = False
         st.rerun()
 
-    st.title("🛠️ Painel Sweet Home")
-    menu_selecionado = st.radio(
-        "Navegação",
-        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"],
-        key="navegacao_principal_sweet"
-    )
-    
-    st.divider()
-    modo_teste = st.toggle("🔬 Modo de Teste", value=False, key="toggle_teste")
-    
-    if st.button("🔄 Sincronizar Planilha", key="btn_sincronizar"):
-        st.cache_resource.clear()
-        st.rerun()
-
 # --- CONFIGURAÇÃO GOOGLE SHEETS ---
 ID_PLANILHA = "1E2NwI5WBE1iCjTWxpUxy3TYpiwKU6e4s4-C1Rp1AJX8"
 ESPECIFICACOES = [
@@ -102,6 +88,9 @@ def conectar_google():
         if "gcp_service_account" in st.secrets:
             creds_info = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
+            return gspread.authorize(creds).open_by_key(ID_PLANILHA)
+        elif os.path.exists('credenciais.json'):
+            creds = ServiceAccountCredentials.from_json_keyfile_name('credenciais.json', ESPECIFICACOES)
             return gspread.authorize(creds).open_by_key(ID_PLANILHA)
         return None
     except Exception as e:
@@ -127,6 +116,7 @@ def carregar_dados():
             df = pd.DataFrame(dados[1:], columns=dados[0])
             if not df.empty:
                 df = df[~df.iloc[:, 0].str.contains("TOTAIS", case=False, na=False)]
+                df = df[~df.iloc[:, 1].str.contains("TOTAIS", case=False, na=False)]
                 df = df[df.iloc[:, 1].str.strip() != ""]
             return df
         except: return pd.DataFrame()
@@ -144,105 +134,129 @@ def carregar_dados():
 
 banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full = carregar_dados()
 
-# ==========================================
-# 4. LÓGICA DE DISTRIBUIÇÃO DAS TELAS
-# ==========================================
+# --- NAVEGAÇÃO ---
+with st.sidebar:
+    st.title("🛠️ Painel Sweet Home")
+    menu_selecionado = st.radio(
+        "Navegação",
+        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"],
+        key="nav_master"
+    )
+    st.divider()
+    modo_teste = st.toggle("🔬 Modo de Teste", value=False)
+    if st.button("🔄 Sincronizar"):
+        st.cache_resource.clear()
+        st.rerun()
 
+# ==========================================
+# --- SEÇÃO 1: VENDAS ---
+# ==========================================
 if menu_selecionado == "🛒 Vendas":
     st.subheader("🛒 Registro de Venda")
     with st.form("form_venda_final", clear_on_submit=True):
-        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"], key="venda_metodo_pg")
+        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"], key="v_metodo")
         
         detalhes_p = []; n_p = 1 
         if metodo == "Sweet Flex":
-            n_p = st.number_input("Número de Parcelas", 1, 12, 1, key="venda_n_parcelas")
+            n_p = st.number_input("Número de Parcelas", 1, 12, 1)
             cols_parc = st.columns(n_p)
             for i in range(n_p):
                 with cols_parc[i]:
-                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_data_parc_{i}")
+                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"d_p_{i}")
                     detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
         col_esq, col_dir = st.columns(2)
         with col_esq:
-            st.write("👤 **Dados da Cliente**")
-            c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()], key="venda_cliente_sel")
-            telefone_sugerido = banco_de_clientes[c_sel.split(" - ")[0]].get('fone', "") if c_sel != "*** NOVO CLIENTE ***" else ""
-            c_nome_novo = st.text_input("Nome Completo (se novo)", key="venda_nome_novo")
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_venda_{c_sel}")
+            c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+            c_nome_novo = st.text_input("Nome (se novo)")
+            tel_sug = banco_de_clientes[c_sel.split(" - ")[0]]['fone'] if c_sel != "*** NOVO CLIENTE ***" else ""
+            c_zap = st.text_input("WhatsApp", value=tel_sug)
 
         with col_dir:
-            st.write("📦 **Produto**")
-            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()], key="venda_produto_sel")
+            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()])
             cc1, cc2, cc3 = st.columns(3)
-            qtd_v = cc1.number_input("Qtd", 1, key="venda_qtd_input")
-            val_v = cc2.number_input("Preço Un.", 0.0, key="venda_val_input")
-            desc_v = cc3.number_input("Desconto (R$)", 0.0, key="venda_desc_input")
-            vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor_input")
+            qtd_v = cc1.number_input("Qtd", 1)
+            val_v = cc2.number_input("Preço Un.", 0.0)
+            desc_v = cc3.number_input("Desconto (R$)", 0.0)
+            vendedor = st.text_input("Vendedor(a)", value="Bia")
 
-        enviar = st.form_submit_button("Finalizar Venda 🚀")
-
-        if enviar:
+        if st.form_submit_button("Finalizar Venda 🚀"):
             if c_sel == "*** NOVO CLIENTE ***":
-                if not c_nome_novo or not c_zap: st.error("⚠️ Preencha Nome e Zap!"); st.stop()
+                if not c_nome_novo or not c_zap: st.error("⚠️ Nome e Zap obrigatórios!"); st.stop()
                 nome_cli = c_nome_novo.strip()
+                cod_cli = f"CLI-{len(df_clientes_full)+1:03d}"
                 if not modo_teste:
-                    try:
-                        aba_cli = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
-                        cod_cli = f"CLI-{len(aba_cli.get_all_values()):03d}"
-                        aba_cli.append_row([cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='USER_ENTERED')
-                    except Exception as e: st.error(f"Erro: {e}"); st.stop()
-                else: cod_cli = "CLI-TESTE"
+                    planilha_mestre.worksheet("CARTEIRA DE CLIENTES").append_row([cod_cli, nome_cli, c_zap, "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='USER_ENTERED')
             else:
                 cod_cli = c_sel.split(" - ")[0]
                 nome_cli = banco_de_clientes[cod_cli]['nome']
 
-            v_bruto = qtd_v * val_v
-            t_liq = v_bruto - desc_v
+            t_liq = (qtd_v * val_v) - desc_v
             cod_p = p_sel.split(" - ")[0]
-            nome_p = p_sel.split(" - ")[1].strip()
-            custo_un = banco_de_produtos[cod_p].get('custo', 0) if cod_p in banco_de_produtos else 0
+            nome_p = p_sel.split(" - ")[1]
             
-            st.session_state['historico_sessao'].insert(0, {"Data": datetime.now().strftime("%d/%m/%Y"), "Cliente": nome_cli, "Produto": nome_p, "Total": f"R$ {t_liq:.2f}"})
-
             if not modo_teste:
-                try:
-                    aba_v = planilha_mestre.worksheet("VENDAS")
-                    idx_ins = aba_v.find("TOTAIS").row 
-                    eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
-                    linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, cod_p, nome_p, custo_un, qtd_v, val_v, (desc_v/v_bruto if v_bruto>0 else 0), "", "", "", "", metodo, eh_parc, n_p, "", t_liq/n_p if eh_parc=="Sim" else 0, t_liq if eh_parc=="Não" else 0, t_liq if eh_parc=="Sim" else 0, detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", "Pendente" if eh_parc=="Sim" else "Pago"]
-                    aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
-                    st.success("✅ Venda registrada!")
-                    st.cache_resource.clear()
-                except Exception as e: st.error(f"Erro: {e}")
-
-            recibo = f"🌸 *RECIBO SWEET HOME*\n💰 *Total:* R$ {t_liq:.2f}\n💳 *Pagto:* {metodo}"
+                aba_v = planilha_mestre.worksheet("VENDAS")
+                idx = aba_v.find("TOTAIS").row
+                linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, cod_p, nome_p, banco_de_produtos[cod_p]['custo'], qtd_v, val_v, desc_v/(qtd_v*val_v) if val_v>0 else 0, "", "", "", "", metodo, "Sim" if metodo=="Sweet Flex" else "Não", n_p, "", t_liq/n_p if metodo=="Sweet Flex" else 0, t_liq if metodo!="Sweet Flex" else 0, "", detalhes_p[0] if detalhes_p else "", "Pendente" if metodo=="Sweet Flex" else "Pago"]
+                aba_v.insert_row(linha, index=idx, value_input_option='USER_ENTERED')
+                st.success("✅ Venda Registrada!")
+            
+            recibo = f"🌸 *RECIBO SWEET HOME*\n📦 {qtd_v}x {nome_p}\n💰 Total: R$ {t_liq:.2f}\n💳 Pagto: {metodo}"
             st.code(recibo)
-            zap_limpo = c_zap.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-            st.link_button("📲 Enviar WhatsApp", f"https://wa.me/55{zap_limpo}?text={urllib.parse.quote(recibo)}", type="primary")
+            st.link_button("📲 Enviar WhatsApp", f"https://wa.me/55{c_zap.replace(' ','')}?text={urllib.parse.quote(recibo)}")
 
-    st.subheader("📝 Histórico")
-    st.dataframe(st.session_state['historico_sessao'], use_container_width=True)
-
-elif menu_selecionado == "💰 Financeiro":
-    st.subheader("💰 Financeiro")
+# ==========================================
+# --- SEÇÃO 2: FINANCEIRO ---
+# ==========================================
+if menu_selecionado == "💰 Financeiro":
+    st.subheader("💰 Painel Financeiro")
     if not df_vendas_hist.empty:
-        vendas_brutas = df_vendas_hist.iloc[:, 19].apply(limpar_v).sum()
-        saldo_devedor = df_vendas_hist.iloc[:, 20].apply(limpar_v).sum()
-        c1, c2 = st.columns(2)
-        c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}")
-        c2.metric("A Receber", f"R$ {saldo_devedor:,.2f}", delta_color="inverse")
+        v_brutas = df_vendas_hist.iloc[:, 11].apply(limpar_v).sum()
+        s_devedor = df_vendas_hist.iloc[:, 20].apply(limpar_v).sum()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Vendas Totais", f"R$ {v_brutas:,.2f}")
+        c2.metric("Saldo Devedor", f"R$ {s_devedor:,.2f}", delta_color="inverse")
+        c3.metric("Recebido", f"R$ {v_brutas - s_devedor:,.2f}")
 
-    with st.expander("➕ Abatimento FIFO"):
-        with st.form("f_fifo"):
+    with st.expander("➕ Lançar Abatimento (FIFO)"):
+        with st.form("fifo"):
             c_pg = st.selectbox("Cliente", [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             v_pg = st.number_input("Valor", 0.0)
             if st.form_submit_button("Confirmar"):
-                st.info("Processando FIFO...") # Adicionar lógica de update aqui
+                st.info("Processando FIFO na planilha...")
+                # Lógica de atualização de células aqui conforme seu original
 
-elif menu_selecionado == "📦 Estoque":
-    st.subheader("📦 Estoque")
+    st.divider()
+    st.markdown("### 🔍 Ficha de Cliente")
+    sel_f = st.selectbox("Ver Extrato", [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+    if sel_f:
+        id_c = sel_f.split(" - ")[0]
+        v_hist = df_vendas_hist[df_vendas_hist['CÓD. CLIENTE'].astype(str) == id_c]
+        st.dataframe(v_hist, use_container_width=True)
+
+# ==========================================
+# --- SEÇÃO 3: ESTOQUE ---
+# ==========================================
+if menu_selecionado == "📦 Estoque":
+    st.subheader("📦 Gestão de Estoque")
+    with st.expander("➕ Novo Produto"):
+        with st.form("novo_p"):
+            c1, c2 = st.columns(2); cod = c1.text_input("Cód"); nom = c2.text_input("Nome")
+            if st.form_submit_button("Salvar"):
+                planilha_mestre.worksheet("INVENTÁRIO").append_row([cod, nom, 0, 0, "", 3, 0, "", 0, datetime.now().strftime("%d/%m/%Y")], value_input_option='USER_ENTERED')
+                st.rerun()
     st.dataframe(df_full_inv, use_container_width=True)
 
-elif menu_selecionado == "👥 Clientes":
-    st.subheader("👥 Clientes")
+# ==========================================
+# --- SEÇÃO 4: CLIENTES ---
+# ==========================================
+if menu_selecionado == "👥 Clientes":
+    st.subheader("👥 Gestão de Clientes")
+    with st.expander("➕ Cadastrar Cliente"):
+        with st.form("c_manual"):
+            n = st.text_input("Nome"); z = st.text_input("Zap")
+            if st.form_submit_button("Salvar"):
+                planilha_mestre.worksheet("CARTEIRA DE CLIENTES").append_row([f"CLI-{len(df_clientes_full)+1:03d}", n, z, "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='USER_ENTERED')
+                st.rerun()
     st.dataframe(df_clientes_full, use_container_width=True)
