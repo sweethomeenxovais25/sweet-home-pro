@@ -6,6 +6,15 @@ import os
 from datetime import datetime
 import urllib.parse
 import streamlit as st
+import streamlit as st
+# ... outros imports ...
+
+# DEVE SER A PRIMEIRA LINHA DEPOIS DOS IMPORTS:
+st.set_page_config(
+    page_title="Sweet Home Enxovais",
+    page_icon="logo_sweet.png", # O Favicon que você queria!
+    layout="wide"               # Mantém o seu layout atual
+)
 # ... (seus outros imports como pandas, gspread, datetime, etc) ...
 
 # ==========================================
@@ -539,6 +548,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
