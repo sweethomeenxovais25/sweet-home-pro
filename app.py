@@ -5,51 +5,20 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 from datetime import datetime
 import urllib.parse
-import streamlit as st
-from datetime import datetime
-import pandas as pd
-import urllib.parse
 
-# 1. TELA DE LOGIN (Só aparece se NÃO estiver logado)
-if not st.session_state['logado']:
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        st.image("logo_sweet.png", use_container_width=True) # LOGO 1: LOGIN
-        # ... resto do form de login ...
-    st.stop()
+# 1. CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira função Streamlit)
+st.set_page_config(
+    page_title="Gestão Sweet",
+    page_icon="logo_sweet.png",
+    layout="wide"
+)
 
-# 2. CONFIGURAÇÃO APÓS LOGIN (Aparece em TODAS as abas no menu)
-with st.sidebar:
-    st.image("logo_sweet.png", use_container_width=True)     # LOGO 2: MENU LATERAL
-    st.divider()
-    # ... botões de navegação ...
-
-# 3. CORPO DO SITE (Não deve ter st.image da logo aqui no topo)
-# Se houver um st.image("logo_sweet.png") aqui, APAGUE.
-st.title("🏠 Painel de Controle")
-
-# --- LÓGICA DE LOGIN COM LOGO ---
+# 2. INICIALIZAÇÃO DO ESTADO DE LOGIN
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
+# 3. TELA DE LOGIN (Só aparece se NÃO estiver logado)
 if not st.session_state['logado']:
-    # Centralização da Logo
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        try:
-            st.image("logo_sweet.png", use_container_width=True)
-        except:
-            st.warning("🌸 Sweet Home Enxovais (Logo não carregada)")
-        
-        st.markdown("<h2 style='text-align: center;'>Sweet Home Enxovais</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray;'>Sistema de Gestão Interna</p>", unsafe_allow_html=True)
-
-        # --- LÓGICA DE ACESSO (LOGIN ÚNICO) ---
-if 'logado' not in st.session_state:
-    st.session_state['logado'] = False
-
-if not st.session_state['logado']:
-    # Layout centralizado para a logo e formulário
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         try:
@@ -65,11 +34,9 @@ if not st.session_state['logado']:
             entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
             
             if entrar:
-                # Busca as senhas nos Secrets
                 senha_bia = st.secrets.get("Bia_CEO")
                 senha_admin = st.secrets.get("admin")
 
-                # Validação
                 if usuario.lower() == "bia" and senha == senha_bia:
                     st.session_state['logado'] = True
                     st.rerun()
@@ -78,16 +45,16 @@ if not st.session_state['logado']:
                     st.rerun()
                 else:
                     st.error("Dados incorretos. Verifique os Secrets.")
-    st.stop() # Mata a execução aqui para não mostrar o resto do site antes do login
+    st.stop() # Interrompe o código aqui para quem não logou
 
-# --- SE CHEGOU AQUI, ESTÁ LOGADO ---
+# 4. CONFIGURAÇÃO APÓS LOGIN (Barra Lateral)
 with st.sidebar:
     try:
         st.image("logo_sweet.png", use_container_width=True)
     except:
         st.write("🌸 **Sweet Home**")
     st.divider()
-    # Aqui continuam seus botões de navegação...
+    # ABAIXO DAQUI CONTINUAM SEUS BOTÕES DE NAVEGAÇÃO (Páginas/Abas)
 
 # ==========================================
 # 🔒 FASE 1: TELA DE LOGIN & SEGURANÇA
@@ -620,6 +587,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
