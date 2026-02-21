@@ -29,8 +29,6 @@ if not st.session_state['autenticado']:
             submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
             if submit:
-                # ATENÇÃO: Senha provisória. No próximo passo vamos esconder isso!
-               if submit:
                 # 1. Puxa a lista de usuários do cofre
                 usuarios_permitidos = st.secrets["usuarios"]
                 
@@ -45,30 +43,22 @@ if not st.session_state['autenticado']:
                         st.error("❌ Senha incorreta.")
                 else:
                     st.error("❌ Usuário não encontrado.")
-                    st.session_state['autenticado'] = True
-                    st.rerun() # Recarrega a página agora com acesso liberado
-                else:
-                    st.error("❌ Usuário ou senha incorretos. Acesso negado.")
     
-    # 🛑 O COMANDO MÁGICO: st.stop() mata o código aqui. 
-    # Nada do que estiver abaixo desta linha vai aparecer ou carregar.
+    # 🛑 O COMANDO MÁGICO: st.stop() mata o código aqui se não logar. 
     st.stop()
-    st.divider()
-if st.button("Sair do Sistema 🚪"):
-    st.session_state['autenticado'] = False
-    st.rerun()
 
 # ==========================================
 # 🚀 SEU APLICATIVO COMEÇA REALMENTE AQUI
 # ==========================================
-# Pode deixar todo o resto do seu código daqui para baixo (título, abas, carregar_dados, etc).
 
-# (Opcional) Um botãozinho no painel para ela poder sair do sistema depois:
+# 🚪 O Botão de Sair (Colocado na barra lateral para quem já entrou)
 with st.sidebar:
-    st.markdown(f"👤 Logado como: **bia**")
-    if st.button("Sair (Logout) 🚪"):
+    st.divider()
+    if st.button("Sair do Sistema 🚪", use_container_width=True):
         st.session_state['autenticado'] = False
         st.rerun()
+
+# (Aqui embaixo continua o resto do seu código original: Título, carregar dados, etc...)
 
 # ==========================================
 # 1. INICIALIZAÇÃO E MEMÓRIA
@@ -478,6 +468,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
