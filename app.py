@@ -162,16 +162,21 @@ banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist
 if menu_selecionado == "🛒 Vendas":
     st.subheader("🛒 Registro de Venda")
     
+    # 🔑 O SEGREDO DA CORREÇÃO: Seleção de pagamento ANTES do formulário
+    # Isso destrava a tela e faz os calendários do Sweet Flex aparecerem na hora!
+    metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"], key="venda_metodo_pg")
+    
+    # O formulário agora agrupa o resto, mantendo a limpeza automática (clear_on_submit)
     with st.form("form_venda_final", clear_on_submit=True):
-        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"], key="sel_metodo_pg")
         
         detalhes_p = []; n_p = 1 
         if metodo == "Sweet Flex":
-            n_p = st.number_input("Número de Parcelas", 1, 12, 1, key="num_parcelas_flex")
+            n_p = st.number_input("Número de Parcelas", 1, 12, 1, key="venda_n_parcelas")
             cols_parc = st.columns(n_p)
             for i in range(n_p):
                 with cols_parc[i]:
-                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_data_{i}")
+                    # KEY dinâmica para as datas das parcelas
+                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_data_parc_{i}")
                     detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
         col_esq, col_dir = st.columns(2)
@@ -181,7 +186,7 @@ if menu_selecionado == "🛒 Vendas":
             c_sel = st.selectbox(
                 "Selecionar Cliente", 
                 ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()],
-                key="venda_cliente_select"
+                key="venda_cliente_sel"
             )
             
             telefone_sugerido = ""
@@ -191,16 +196,16 @@ if menu_selecionado == "🛒 Vendas":
                     telefone_sugerido = banco_de_clientes[id_cliente].get('fone', "")
 
             c_nome_novo = st.text_input("Nome Completo (se novo)", key="venda_nome_novo")
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_input_{c_sel}")
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_venda_{c_sel}")
 
         with col_dir:
             st.write("📦 **Produto**")
-            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()], key="venda_prod_select")
+            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()], key="venda_produto_sel")
             cc1, cc2, cc3 = st.columns(3)
-            qtd_v = cc1.number_input("Qtd", 1, key="venda_qtd")
-            val_v = cc2.number_input("Preço Un.", 0.0, key="venda_preco")
-            desc_v = cc3.number_input("Desconto (R$)", 0.0, key="venda_desc")
-            vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor")
+            qtd_v = cc1.number_input("Qtd", 1, key="venda_qtd_input")
+            val_v = cc2.number_input("Preço Un.", 0.0, key="venda_val_input")
+            desc_v = cc3.number_input("Desconto (R$)", 0.0, key="venda_desc_input")
+            vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor_input")
 
         enviar = st.form_submit_button("Finalizar Venda 🚀")
 
@@ -254,6 +259,7 @@ if menu_selecionado == "🛒 Vendas":
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
+                    # LINHA EXATAMENTE IGUAL AO SEU ORIGINAL
                     linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, cod_p, nome_p, custo_un, qtd_v, val_v, desc_percentual, "", "", "", "", metodo, eh_parc, n_p, "", t_liq/n_p if eh_parc=="Sim" else 0, t_liq if eh_parc=="Não" else 0, "", detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", "Pendente" if eh_parc=="Sim" else "Pago", f_atraso]
                     
                     aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
@@ -528,3 +534,4 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
