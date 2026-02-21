@@ -12,7 +12,7 @@ import urllib.parse
 
 # 1. CONFIGURAÇÃO DA PÁGINA (Sempre a primeira linha funcional)
 st.set_page_config(
-    page_title="Gestão Sweet",
+    page_title="Gestão Sweet", # O nome que você quer agora
     page_icon="logo_sweet.png", 
     layout="wide"
 )
@@ -589,6 +589,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
