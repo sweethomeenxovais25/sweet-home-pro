@@ -223,29 +223,35 @@ if menu_selecionado == "🛒 Vendas":
         # ... (O restante do seu código de processamento do 'if enviar' continua igual abaixo daqui)
 
 # ==========================================
-# --- ABA 1: VENDAS (SISTEMA INTEGRAL) ---
+# --- SEÇÃO 1: VENDAS (SISTEMA INTEGRAL) ---
 # ==========================================
-with aba_venda:
+if menu_selecionado == "🛒 Vendas":
     st.subheader("🛒 Registro de Venda")
     
-    # Criamos o formulário para agrupar tudo
+    # Criamos o formulário para agrupar tudo - KEY adicionada para estabilidade
     with st.form("form_venda_final", clear_on_submit=True):
-        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"])
+        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"], key="venda_metodo_pg")
         
         detalhes_p = []; n_p = 1 
         if metodo == "Sweet Flex":
-            n_p = st.number_input("Número de Parcelas", 1, 12, 1)
+            n_p = st.number_input("Número de Parcelas", 1, 12, 1, key="venda_n_parcelas")
             cols_parc = st.columns(n_p)
             for i in range(n_p):
                 with cols_parc[i]:
-                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_{i}")
+                    # KEY dinâmica para as datas das parcelas
+                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_data_parc_{i}")
                     detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
         col_esq, col_dir = st.columns(2)
 
         with col_esq:
             st.write("👤 **Dados da Cliente**")
-            c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+            # KEY adicionada para o seletor de cliente
+            c_sel = st.selectbox(
+                "Selecionar Cliente", 
+                ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()],
+                key="venda_cliente_sel"
+            )
             
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
@@ -253,17 +259,18 @@ with aba_venda:
                 if id_cliente in banco_de_clientes:
                     telefone_sugerido = banco_de_clientes[id_cliente].get('fone', "")
 
-            c_nome_novo = st.text_input("Nome Completo (se novo)")
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_final_{c_sel}")
+            c_nome_novo = st.text_input("Nome Completo (se novo)", key="venda_nome_novo")
+            # A KEY do Zap agora é dinâmica baseada na seleção para não bugar
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_venda_{c_sel}")
 
         with col_dir:
             st.write("📦 **Produto**")
-            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()])
+            p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()], key="venda_produto_sel")
             cc1, cc2, cc3 = st.columns(3)
-            qtd_v = cc1.number_input("Qtd", 1)
-            val_v = cc2.number_input("Preço Un.", 0.0)
-            desc_v = cc3.number_input("Desconto (R$)", 0.0)
-            vendedor = st.text_input("Vendedor(a)", value="Bia")
+            qtd_v = cc1.number_input("Qtd", 1, key="venda_qtd_input")
+            val_v = cc2.number_input("Preço Un.", 0.0, key="venda_val_input")
+            desc_v = cc3.number_input("Desconto (R$)", 0.0, key="venda_desc_input")
+            vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor_input")
 
         enviar = st.form_submit_button("Finalizar Venda 🚀")
 
@@ -305,7 +312,7 @@ with aba_venda:
                 "Hora": datetime.now().strftime("%H:%M:%S"),
                 "Cliente": nome_cli, 
                 "Produto": nome_p, 
-                "Pagto": metodo,  # <--- NOVA COLUNA ADICIONADA
+                "Pagto": metodo, 
                 "Total": f"R$ {t_liq:.2f}"
             })
 
@@ -347,16 +354,16 @@ with aba_venda:
 
             st.code(recibo_texto, language="text")
             
-            import urllib.parse
             zap_limpo = c_zap.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
             st.link_button("📲 Enviar Recibo para o WhatsApp", f"https://wa.me/55{zap_limpo}?text={urllib.parse.quote(recibo_texto)}", use_container_width=True, type="primary")
 
-    # --- SEÇÃO REGISTROS RECENTES VISÍVEL ---
+    # --- SEÇÃO REGISTROS RECENTES ---
     st.divider()
-    st.subheader("📝 Histórico de Registros") # <--- NOMENCLATURA AJUSTADA
+    st.subheader("📝 Histórico de Registros")
     if st.session_state['historico_sessao']:
         st.dataframe(st.session_state['historico_sessao'], use_container_width=True, hide_index=True)
-        if st.button("Limpar Histórico Local 🗑️"):
+        # KEY adicionada no botão de limpar para não resetar a aba
+        if st.button("Limpar Histórico Local 🗑️", key="btn_limpar_hist"):
             st.session_state['historico_sessao'] = []; st.rerun()
 # ==========================================
 # --- ABA 2: FINANCEIRO (RESUMO + FIFO + COBRANÇA) ---
@@ -607,6 +614,7 @@ with aba_clientes:
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
