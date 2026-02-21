@@ -16,6 +16,7 @@ if 'historico_sessao' not in st.session_state:
 st.set_page_config(page_title="Sweet Home Pro", page_icon="🏠", layout="wide")
 
 ID_PLANILHA = "1E2NwI5WBE1iCjTWxpUxy3TYpiwKU6e4s4-C1Rp1AJX8"
+
 ESPECIFICACOES = [
     "https://spreadsheets.google.com/feeds", 
     'https://www.googleapis.com/auth/spreadsheets',
@@ -41,7 +42,7 @@ def conectar_google():
 planilha_mestre = conectar_google()
 
 # ==========================================
-# 2. MOTOR DE DADOS (7 DATAFRAMES)
+# 2. CARREGAMENTO REFINADO (7 ITENS)
 # ==========================================
 @st.cache_resource(ttl=600)
 def carregar_dados():
@@ -70,22 +71,23 @@ def carregar_dados():
 
 banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full = carregar_dados()
 
-# ==========================================
-# 3. INTERFACE E ABAS (ORDEM CRUCIAL)
-# ==========================================
-st.sidebar.title("🛠️ Painel Sweet Home")
-modo_teste = st.sidebar.toggle("🔬 Modo de Teste", value=False)
-if st.sidebar.button("🔄 Sincronizar"):
-    st.cache_resource.clear(); st.rerun()
-
-aba_venda, aba_financeiro, aba_estoque, aba_clientes = st.tabs(["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"])
-
 def limpar_v(v):
     if pd.isna(v) or v == "": return 0.0
     return pd.to_numeric(str(v).replace('R$', '').replace('.', '').replace(',', '.').strip(), errors='coerce') or 0.0
 
 # ==========================================
-# --- ABA 1: VENDAS (MOTOR INTEGRAL) ---
+# 3. INTERFACE E ABAS
+# ==========================================
+st.sidebar.title("🛠️ Painel Sweet Home")
+modo_teste = st.sidebar.toggle("🔬 Modo de Teste", value=False)
+if st.sidebar.button("🔄 Sincronizar Planilha"):
+    st.cache_resource.clear()
+    st.rerun()
+
+aba_venda, aba_financeiro, aba_estoque, aba_clientes = st.tabs(["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes"])
+
+# ==========================================
+# --- ABA 1: VENDAS (SISTEMA INTEGRAL) ---
 # ==========================================
 with aba_venda:
     st.subheader("🛒 Registro de Venda")
@@ -93,60 +95,66 @@ with aba_venda:
     
     detalhes_p = []; n_p = 1 
     if metodo == "Sweet Flex":
-        n_p = st.number_input("Parcelas", 1, 12, 1)
+        n_p = st.number_input("Número de Parcelas", 1, 12, 1)
         cols = st.columns(n_p)
         for i in range(n_p):
             with cols[i]:
-                dt = st.date_input(f"{i+1}ª", datetime.now(), key=f"vd_{i}")
+                dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_{i}")
                 detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
     with st.form("form_venda", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
-            c_sel = st.selectbox("Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
-            c_nome_novo = st.text_input("Nome (se novo)"); c_zap = st.text_input("WhatsApp")
+            st.write("👤 **Cliente**")
+            c_sel = st.selectbox("Selecionar", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
+            c_nome_novo = st.text_input("Nome Completo (se novo)")
+            c_zap = st.text_input("WhatsApp")
         with c2:
-            p_sel = st.selectbox("Produto", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()])
+            st.write("📦 **Produto**")
+            p_sel = st.selectbox("Item", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()])
             cc1, cc2, cc3 = st.columns(3)
-            qtd_v = cc1.number_input("Qtd", 1); val_v = cc2.number_input("Preço", 0.0); desc_v = cc3.number_input("Desc (R$)", 0.0)
+            qtd_v = cc1.number_input("Qtd", 1); val_v = cc2.number_input("Preço Un.", 0.0); desc_v = cc3.number_input("Desconto (R$)", 0.0)
             vendedor = st.text_input("Vendedor(a)", value="Bia")
 
         if st.form_submit_button("Finalizar Venda 🚀"):
-            # --- PONTE DE CADASTRO ---
+            # PONTE DE CADASTRO
             if c_sel == "*** NOVO CLIENTE ***":
-                if not c_nome_novo or not c_zap: st.error("⚠️ Nome/WhatsApp obrigatórios!"); st.stop()
+                if not c_nome_novo or not c_zap: st.error("⚠️ Preencha os dados do cliente!"); st.stop()
                 nome_cli = c_nome_novo.strip()
                 if not modo_teste:
-                    aba_cli = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
-                    dados_c = aba_cli.get_all_values()
-                    nomes_up = [l[1].strip().upper() for l in dados_c[1:]]
-                    if nome_cli.upper() in nomes_up:
-                        cod_cli = dados_c[nomes_up.index(nome_cli.upper())+1][0]
-                    else:
-                        cod_cli = f"CLI-{len(dados_c):03d}"
-                        aba_cli.append_row([cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='USER_ENTERED')
-                        st.toast("👤 Cliente cadastrada!")
+                    try:
+                        aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
+                        dados_c = aba_cli_sheet.get_all_values()
+                        nomes_up = [l[1].strip().upper() for l in dados_c[1:]]
+                        if nome_cli.upper() in nomes_up:
+                            cod_cli = dados_c[nomes_up.index(nome_cli.upper())+1][0]
+                        else:
+                            cod_cli = f"CLI-{len(dados_c):03d}"
+                            aba_cli_sheet.append_row([cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='USER_ENTERED')
+                    except Exception as e: st.error(f"Erro Cadastro: {e}"); st.stop()
             else:
                 cod_cli = c_sel.split(" - ")[0]; nome_cli = banco_de_clientes[cod_cli]['nome']
 
-            # --- GRAVAÇÃO (EMPURA TOTAIS) ---
+            # CÁLCULOS E GRAVAÇÃO (EMPURA TOTAIS)
             v_bruto = qtd_v * val_v; t_liq = v_bruto - desc_v
             if not modo_teste:
-                aba_v = planilha_mestre.worksheet("VENDAS")
-                try: idx_ins = aba_v.find("TOTAIS").row
-                except: idx_ins = len(aba_v.col_values(2)) + 1
-                
-                eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
-                linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, p_sel.split(" - ")[0], p_sel.split(" - ")[1].strip(), "", qtd_v, val_v, desc_v/v_bruto if v_bruto > 0 else 0, "", t_liq, "", "", metodo, eh_parc, n_p, t_liq if eh_parc == "Não" else 0, t_liq/n_p if eh_parc == "Sim" else 0, t_liq if eh_parc == "Não" else 0, t_liq if eh_parc == "Sim" else 0, detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else "", "Pendente" if eh_parc == "Sim" else "Pago", '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))']
-                aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
-                st.cache_resource.clear(); st.success("✅ Venda Gravada!")
+                try:
+                    aba_v = planilha_mestre.worksheet("VENDAS")
+                    idx_ins = aba_v.find("TOTAIS").row
+                    eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
+                    f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
+                    linha = ["", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, p_sel.split(" - ")[0], p_sel.split(" - ")[1].strip(), "", qtd_v, val_v, desc_v/v_bruto if v_bruto > 0 else 0, "", t_liq, "", "", metodo, eh_parc, n_p, t_liq if eh_parc == "Não" else 0, t_liq/n_p if eh_parc == "Sim" else 0, t_liq if eh_parc == "Não" else 0, t_liq if eh_parc == "Sim" else 0, detalhes_p[0] if (eh_parc == "Sim" and detalhes_p) else "", "Pendente" if eh_parc == "Sim" else "Pago", f_atraso]
+                    aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
+                    st.cache_resource.clear(); st.success("✅ Gravado!")
+                except: st.error("Erro ao localizar linha TOTAIS.")
             
             # RECIBO
-            recibo = f"*SWEET HOME*\nCliente: {nome_cli}\nTotal: R$ {t_liq:.2f}"
+            recibo = f"*RECIBO SWEET HOME*\nCliente: {nome_cli}\nTotal: R$ {t_liq:.2f}"
+            st.session_state['historico_sessao'].insert(0, {"Data": datetime.now().strftime("%d/%m/%Y"), "Cliente": nome_cli, "Total": f"R$ {t_liq:.2f}"})
             st.link_button("📲 Enviar WhatsApp", f"https://wa.me/55{c_zap}?text={urllib.parse.quote(recibo)}", use_container_width=True)
 
 # ==========================================
-# --- ABA 2: FINANCEIRO (FIFO) ---
+# --- ABA 2: FINANCEIRO (MÉTRICAS + FIFO + FICHA) ---
 # ==========================================
 with aba_financeiro:
     st.markdown("### 💰 Controle Financeiro")
@@ -160,35 +168,79 @@ with aba_financeiro:
     with st.expander("➕ Lançar Abatimento (FIFO)", expanded=False):
         with st.form("f_fifo"):
             c_pg = st.selectbox("Cliente", sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()]))
-            v_pg = st.number_input("Valor (R$)", 0.0)
+            v_pg = st.number_input("Valor Pago (R$)", 0.0); meio = st.selectbox("Meio", ["Pix", "Dinheiro", "Cartão"]); obs = st.text_input("Obs", "Abatimento")
             if st.form_submit_button("Confirmar ✅"):
-                # Lógica FIFO aqui (abreviada para espaço, manter a que já funciona)
-                st.success("Abatimento processado!"); st.cache_resource.clear()
+                if v_pg > 0:
+                    try:
+                        aba_v = planilha_mestre.worksheet("VENDAS")
+                        df_v_viva = pd.DataFrame(aba_v.get_all_records())
+                        df_v_viva['S_NUM'] = df_v_viva['SALDO DEVEDOR'].apply(limpar_v)
+                        nome_c = " - ".join(c_pg.split(" - ")[1:])
+                        pendentes = df_v_viva[(df_v_viva['CLIENTE'] == nome_c) & (df_v_viva['S_NUM'] > 0)].copy()
+                        sobra = v_pg
+                        for idx, row in pendentes.iterrows():
+                            if sobra <= 0: break
+                            lin = idx + 2; div = row['S_NUM']
+                            if sobra >= div:
+                                aba_v.update_acell(f"U{lin}", 0); aba_v.update_acell(f"W{lin}", "Pago"); sobra -= div
+                            else:
+                                aba_v.update_acell(f"U{lin}", div - sobra); sobra = 0
+                        aba_f = planilha_mestre.worksheet("FINANCEIRO")
+                        aba_f.append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), c_pg.split(" - ")[0], nome_c, 0, v_pg, "PAGO", f"{meio}: {obs}"], value_input_option='USER_ENTERED')
+                        st.success("✅ Saldo abatido!"); st.cache_resource.clear()
+                    except Exception as e: st.error(f"Erro FIFO: {e}")
+
+    st.markdown("### 🔍 Consultar Ficha da Cliente")
+    if not df_vendas_hist.empty:
+        opc = sorted([f"{c} - {banco_de_clientes.get(str(c), {}).get('nome', '???')}" for c in df_vendas_hist['CÓD. CLIENTE'].unique() if str(c).strip()])
+        sel_c = st.selectbox("Escolha a cliente para ver histórico e cobrar:", ["---"] + opc)
+        if sel_c != "---":
+            id_c = sel_c.split(" - ")[0]; nome_c = " - ".join(sel_c.split(" - ")[1:])
+            v_hist = df_vendas_hist[df_vendas_hist['CÓD. CLIENTE'].astype(str) == id_c]
+            div_c = v_hist['SALDO DEVEDOR'].apply(limpar_v).sum(); pago_c = df_financeiro[df_financeiro['CÓD. CLIENTE'].astype(str) == id_c]['VALOR_PAGO'].apply(limpar_v).sum() if not df_financeiro.empty else 0
+            m1, m2 = st.columns(2); m1.metric("Saldo Pendente", f"R$ {div_c - pago_c:.2f}"); 
+            st.dataframe(v_hist[['DATA DA VENDA', 'PRODUTO', 'TOTAL R$', 'SALDO DEVEDOR', 'STATUS']], hide_index=True)
+            if div_c - pago_c > 0:
+                txt = f"Olá {nome_c}! 🏠 Segue seu extrato na Sweet Home: saldo de R$ {div_c - pago_c:.2f}."
+                st.link_button("📲 Cobrar via WhatsApp", f"https://wa.me/55{banco_de_clientes[id_c]['fone']}?text={urllib.parse.quote(txt)}", use_container_width=True)
 
 # ==========================================
-# --- ABA 3: ESTOQUE ---
+# --- ABA 3: ESTOQUE (CADASTRO + BUSCA + ALERTA) ---
 # ==========================================
 with aba_estoque:
-    st.subheader("📦 Gestão de Itens")
-    busca = st.text_input("🔍 Busca (Nome, Código ou Data)")
+    st.subheader("📦 Gestão de Estoque")
+    with st.expander("➕ Cadastrar Novo Produto"):
+        with st.form("f_est"):
+            c1, c2 = st.columns([1, 2]); n_c = c1.text_input("Cód."); n_n = c2.text_input("Nome")
+            c3, c4 = st.columns(2); n_q = c3.number_input("Qtd", 0); n_v = c4.number_input("Preço Venda", 0.0)
+            if st.form_submit_button("Salvar"):
+                aba_inv = planilha_mestre.worksheet("INVENTÁRIO")
+                aba_inv.append_row([n_c, n_n, n_q, 0, "", 3, 0, "", n_v, datetime.now().strftime("%d/%m/%Y")], value_input_option='USER_ENTERED')
+                st.success("✅ Produto Cadastrado!"); st.cache_resource.clear()
+
+    st.divider()
     df_e = df_full_inv.copy()
+    if not df_e.empty:
+        df_e['QUANTIDADE'] = pd.to_numeric(df_e['QUANTIDADE'], errors='coerce')
+        baixos = df_e[df_e['QUANTIDADE'] <= 3]
+        if not baixos.empty: st.warning(f"🚨 {len(baixos)} itens com estoque baixo!")
+    busca = st.text_input("🔍 Busca Universal (Nome, Código ou Data)")
     if busca: df_e = df_e[df_e.apply(lambda r: busca.lower() in str(r).lower(), axis=1)]
     st.dataframe(df_e, use_container_width=True, hide_index=True)
 
 # ==========================================
-# --- ABA 4: CLIENTES (O RESGATE COMPLETO) ---
+# --- ABA 4: CLIENTES (RADAR + ÁREA 2 CADASTRO) ---
 # ==========================================
 with aba_clientes:
     st.subheader("👥 Gestão de Clientes")
 
-    # --- ✨ ÁREA 2: CADASTRO DO ZERO (RECUPERADO!) ---
+    # ➕ ÁREA 2: CADASTRO DO ZERO (RECUPERADO EXATAMENTE COMO VOCÊ PEDIU)
     with st.expander("➕ Cadastrar Nova Cliente (Sem compra atual)", expanded=False):
         with st.form("form_novo_cliente", clear_on_submit=True):
             st.markdown("O Código será gerado sozinho pelo sistema!")
             c1, c2 = st.columns([2, 1])
             novo_nome_cli = c1.text_input("Nome Completo *")
             novo_zap_cli = c2.text_input("WhatsApp (DDD+Número) *")
-            
             c3, c4 = st.columns([3, 1])
             novo_endereco = c3.text_input("Bairro / Endereço")
             novo_vale = c4.number_input("Vale Desconto Inicial (R$)", min_value=0.0, format="%.2f")
@@ -196,21 +248,14 @@ with aba_clientes:
             if st.form_submit_button("Salvar Novo Cadastro 💾"):
                 if novo_nome_cli and novo_zap_cli:
                     try:
+                        prox_num = len(df_clientes_full) + 1
+                        codigo_gerado = f"CLI-{prox_num:03d}" 
                         if not modo_teste:
                             aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
-                            dados_c = aba_cli_sheet.get_all_values()
-                            prox_num = len(dados_c) # Pega a próxima linha disponível
-                            codigo_gerado = f"CLI-{prox_num:03d}" 
-                            
-                            linha_cliente = [
-                                codigo_gerado, novo_nome_cli.strip(), novo_zap_cli.strip(),
-                                novo_endereco.strip(), datetime.now().strftime("%d/%m/%Y"),
-                                novo_vale, "", "Completo" if novo_endereco else "Incompleto"
-                            ]
+                            linha_cliente = [codigo_gerado, novo_nome_cli.strip(), novo_zap_cli.strip(), novo_endereco.strip(), datetime.now().strftime("%d/%m/%Y"), novo_vale, "", "Completo" if novo_endereco else "Incompleto"]
                             aba_cli_sheet.append_row(linha_cliente, value_input_option='USER_ENTERED')
-                            st.success(f"✅ {novo_nome_cli} cadastrada como {codigo_gerado}!")
-                            st.cache_resource.clear()
-                    except Exception as e: st.error(f"Erro ao salvar: {e}")
+                            st.success(f"✅ {novo_nome_cli} cadastrada como {codigo_gerado}!"); st.cache_resource.clear()
+                    except Exception as e: st.error(f"Erro: {e}")
 
     st.divider()
     if not df_clientes_full.empty:
@@ -218,9 +263,8 @@ with aba_clientes:
         try:
             inc = df_clientes_full[df_clientes_full.iloc[:, 7].str.strip() == "Incompleto"]
             if not inc.empty:
-                st.warning(f"🚨 Radar: {len(inc)} cadastros pendentes!"); st.dataframe(inc, hide_index=True)
+                st.warning(f"🚨 Radar: {len(inc)} cadastros incompletos!")
+                st.dataframe(inc, use_container_width=True, hide_index=True)
         except: pass
-        
-        st.divider()
-        st.markdown("### 🗂️ Carteira Total de Clientes")
+        st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
