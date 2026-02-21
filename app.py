@@ -182,17 +182,22 @@ with aba_venda:
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             
-            # 2. Lógica de Captura (Tradução de Telefone/Fone para WhatsApp)
+            # 2. Lógica de Varredura Infalível (Ajustada ao Raio-X)
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
-                id_cliente = c_sel.split(" - ")[0].strip()
-                dados_cli = banco_de_clientes.get(id_cliente, {})
+                # Pega o ID (Ex: 722911)
+                id_procurado = c_sel.split(" - ")[0].strip()
                 
-                # A lógica que deu certo antes: tentamos as variações da planilha
-                # O seu debug mostrou 'fone', então ele é a nossa prioridade!
-                telefone_sugerido = dados_cli.get('fone') or \
-                                    dados_cli.get('TELEFONE') or \
-                                    dados_cli.get('whatsapp', "")
+                # VARREDURA DIRETA: Percorre o banco ignorando a estrutura
+                for id_chave, dados in banco_de_clientes.items():
+                    # Se o ID bater (convertendo para string para não ter erro de tipo)
+                    if str(id_chave).strip() == id_procurado:
+                        # Achamos a ficha! Agora pegamos o 'fone' (que vimos no Raio-X)
+                        # ou 'TELEFONE' ou o que tiver valor
+                        telefone_sugerido = dados.get('fone') or \
+                                            dados.get('TELEFONE') or \
+                                            dados.get('whatsapp', "")
+                        break # Achou, pode parar de procurar
             
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
@@ -488,6 +493,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
