@@ -182,28 +182,23 @@ with aba_venda:
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             
-            # 2. Lógica de Varredura Infalível (Ajustada ao Raio-X)
+            # 2. Lógica de Captura Direta (Baseada no seu Raio-X)
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
-                # Pega o ID (Ex: 722911)
-                id_procurado = c_sel.split(" - ")[0].strip()
-                
-                # VARREDURA DIRETA: Percorre o banco ignorando a estrutura
-                for id_chave, dados in banco_de_clientes.items():
-                    # Se o ID bater (convertendo para string para não ter erro de tipo)
-                    if str(id_chave).strip() == id_procurado:
-                        # Achamos a ficha! Agora pegamos o 'fone' (que vimos no Raio-X)
-                        # ou 'TELEFONE' ou o que tiver valor
-                        telefone_sugerido = dados.get('fone') or \
-                                            dados.get('TELEFONE') or \
-                                            dados.get('whatsapp', "")
-                        break # Achou, pode parar de procurar
-            
+                id_cliente = c_sel.split(" - ")[0].strip()
+                # O seu Raio-X mostrou que os dados estão dentro de 'fone'
+                if id_cliente in banco_de_clientes:
+                    telefone_sugerido = banco_de_clientes[id_cliente].get('fone', "")
+
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
             
-            # O 'key' é o que faz o número "pular" na tela ao trocar o cliente
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"venda_zap_{c_sel}")
+            # O "Pulo do Gato": Se você mudar o cliente, o campo de texto REINICIA
+            # Usamos o placeholder para mostrar o número atual sem travar a edição
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_final_{c_sel}")
+
+            # DICA DE OURO: Se você quiser que o novo número atualize o cadastro no futuro,
+            # me avise que adicionamos uma linha no "if enviar" para dar o 'Update' na planilha.
 
         with col_dir:
             st.write("📦 **Produto**")
@@ -493,6 +488,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
