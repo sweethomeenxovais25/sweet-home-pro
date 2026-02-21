@@ -159,46 +159,59 @@ aba_venda, aba_financeiro, aba_estoque, aba_clientes = st.tabs(["🛒 Vendas", "
 # ==========================================
 with aba_venda:
     st.subheader("🛒 Registro de Venda")
-    metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"])
     
-    detalhes_p = []; n_p = 1 
-    if metodo == "Sweet Flex":
-        n_p = st.number_input("Número de Parcelas", 1, 12, 1)
-        cols = st.columns(n_p)
-        for i in range(n_p):
-            with cols[i]:
-                dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_{i}")
-                detalhes_p.append(dt.strftime("%d/%m/%Y"))
+    # Criamos o formulário para agrupar tudo
+    with st.form("form_venda_final", clear_on_submit=True):
+        metodo = st.selectbox("Forma de Pagamento", ["Pix", "Dinheiro", "Cartão", "Sweet Flex"])
+        
+        detalhes_p = []; n_p = 1 
+        if metodo == "Sweet Flex":
+            n_p = st.number_input("Número de Parcelas", 1, 12, 1)
+            cols_parc = st.columns(n_p)
+            for i in range(n_p):
+                with cols_parc[i]:
+                    dt = st.date_input(f"{i+1}ª Parc.", datetime.now(), key=f"vd_{i}")
+                    detalhes_p.append(dt.strftime("%d/%m/%Y"))
 
-    with c1:
+        # Criando as colunas de layout dentro do formulário
+        col_esq, col_dir = st.columns(2)
+
+        with col_esq:
             st.write("👤 **Dados da Cliente**")
             
             # 1. Seleção do Cliente
             c_sel = st.selectbox("Selecionar Cliente", ["*** NOVO CLIENTE ***"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
             
-            # 2. Lógica para capturar o Telefone Automático
+            # 2. Lógica para capturar o Telefone Automático (Usa 'zap' ou 'contato' conforme seu banco)
             telefone_sugerido = ""
             if c_sel != "*** NOVO CLIENTE ***":
-                cod_cli = c_sel.split(" - ")[0]
-                # Busca o telefone no seu banco. Ajuste 'telefone' para o nome da chave que você usa (ex: 'zap' ou 'contato')
-                telefone_sugerido = banco_de_clientes[cod_cli].get('telefone', "")
+                cod_cli_temp = c_sel.split(" - ")[0]
+                # Aqui ele tenta pegar o telefone cadastrado. Se não achar, fica vazio.
+                telefone_sugerido = banco_de_clientes[cod_cli_temp].get('telefone', "")
             
             # 3. Inputs do Formulário
             c_nome_novo = st.text_input("Nome Completo (se novo)")
-            
-            # O 'value' é o segredo: se tiver telefone no banco, ele já nasce preenchido
+            # O campo WhatsApp agora nasce preenchido se o cliente já existir
             c_zap = st.text_input("WhatsApp", value=telefone_sugerido)
-        with c2:
+
+        with col_dir:
             st.write("📦 **Produto**")
             p_sel = st.selectbox("Item do Estoque", [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()])
             cc1, cc2, cc3 = st.columns(3)
-            qtd_v = cc1.number_input("Qtd", 1); val_v = cc2.number_input("Preço Un.", 0.0); desc_v = cc3.number_input("Desconto (R$)", 0.0)
+            qtd_v = cc1.number_input("Qtd", 1)
+            val_v = cc2.number_input("Preço Un.", 0.0)
+            desc_v = cc3.number_input("Desconto (R$)", 0.0)
             vendedor = st.text_input("Vendedor(a)", value="Bia")
 
-        if st.form_submit_button("Finalizar Venda 🚀"):
+        # O botão PRECISA estar dentro do bloco 'with st.form'
+        enviar = st.form_submit_button("Finalizar Venda 🚀")
+
+        if enviar:
             # --- PONTE DE CADASTRO AUTOMÁTICO ---
             if c_sel == "*** NOVO CLIENTE ***":
-                if not c_nome_novo or not c_zap: st.error("⚠️ Preencha Nome e Zap!"); st.stop()
+                if not c_nome_novo or not c_zap: 
+                    st.error("⚠️ Preencha Nome e Zap!")
+                    st.stop()
                 nome_cli = c_nome_novo.strip()
                 if not modo_teste:
                     try:
@@ -211,9 +224,15 @@ with aba_venda:
                             cod_cli = f"CLI-{len(dados_c):03d}"
                             aba_cli.append_row([cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='USER_ENTERED')
                             st.toast(f"👤 {nome_cli} cadastrada!")
-                    except Exception as e: st.error(f"Erro: {e}"); st.stop()
+                    except Exception as e: 
+                        st.error(f"Erro no cadastro de cliente: {e}")
+                        st.stop()
             else:
-                cod_cli = c_sel.split(" - ")[0]; nome_cli = banco_de_clientes[cod_cli]['nome']
+                cod_cli = c_sel.split(" - ")[0]
+                nome_cli = banco_de_clientes[cod_cli]['nome']
+            
+            # Daqui para baixo entra aquela lógica de PROCESSAMENTO que ajustamos antes
+            # para enviar as colunas vazias "" onde o Sheets tem as fórmulas.
 
             # --- PROCESSAMENTO (DESCONTO DECIMAL + TOTAIS) ---
             v_bruto = qtd_v * val_v
@@ -480,6 +499,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
