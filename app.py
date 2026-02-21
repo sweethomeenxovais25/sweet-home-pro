@@ -159,6 +159,9 @@ aba_venda, aba_financeiro, aba_estoque, aba_clientes = st.tabs(["🛒 Vendas", "
 # ==========================================
 with aba_venda:
     st.subheader("🛒 Registro de Venda")
+    st.write("--- DEBUG BANCO ---")
+    st.write(type(banco_de_clientes)) # Nos diz se é lista ou dicionário
+    st.write(list(banco_de_clientes.items())[:1]) # Mostra a primeira ficha do banco
     
     # Criamos o formulário para agrupar tudo
     with st.form("form_venda_final", clear_on_submit=True):
@@ -496,6 +499,7 @@ with aba_clientes:
         except: pass
         st.markdown("### 🗂️ Carteira Total")
         st.dataframe(df_clientes_full, use_container_width=True, hide_index=True)
+
 
 
 
