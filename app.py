@@ -118,7 +118,10 @@ planilha_mestre = conectar_google()
 # --- AUXILIARES TÉCNICOS ---
 def limpar_v(v):
     if pd.isna(v) or v == "": return 0.0
-    return pd.to_numeric(str(v).replace('R$', '').replace('.', '').replace(',', '.').strip(), errors='coerce') or 0.0
+    # Limpa o texto e transforma em número
+    numero = pd.to_numeric(str(v).replace('R$', '').replace('.', '').replace(',', '.').strip(), errors='coerce') or 0.0
+    # Corta o número cravado em 2 casas decimais (igual dinheiro de verdade)
+    return round(numero, 2)
 
 # ==========================================
 # 2. MOTOR DE DADOS REFINADO (7 ITENS)
@@ -572,6 +575,7 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
