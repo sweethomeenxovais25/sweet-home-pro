@@ -262,11 +262,13 @@ if menu_selecionado == "🛒 Vendas":
                     eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                     f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
                     
-                    # --- 🪄 FÓRMULAS DINÂMICAS DO ROBÔ ---
-                    f_k = '=SE(INDIRETO("I"&LIN())=""; ""; INDIRETO("I"&LIN()) * (1 - INDIRETO("J"&LIN())))'
-                    f_l = '=SE(INDIRETO("H"&LIN())=""; ""; INDIRETO("H"&LIN()) * INDIRETO("K"&LIN()))'
-                    f_m = '=SE(INDIRETO("L"&LIN())=""; ""; INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())))'
+                    # --- 🪄 FÓRMULAS DINÂMICAS DO ROBÔ (COM ARREDONDAMENTO REAL) ---
+                    # O "ARRED(fórmula; 2)" obriga o Google Sheets a cortar os centavos invisíveis
+                    f_k = '=SE(INDIRETO("I"&LIN())=""; ""; ARRED(INDIRETO("I"&LIN()) * (1 - INDIRETO("J"&LIN())); 2))'
+                    f_l = '=SE(INDIRETO("H"&LIN())=""; ""; ARRED(INDIRETO("H"&LIN()) * INDIRETO("K"&LIN()); 2))'
+                    f_m = '=SE(INDIRETO("L"&LIN())=""; ""; ARRED(INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())); 2))'
                     f_n = '=SE(INDIRETO("L"&LIN())=""; ""; SEERRO(INDIRETO("M"&LIN()) / INDIRETO("L"&LIN()); ""))'
+                    f_r = '=SE(INDIRETO("L"&LIN())=""; ""; SE(INDIRETO("P"&LIN())="Não"; INDIRETO("L"&LIN()); 0))'
                     
                     # 👇 A NOVA FÓRMULA DA COLUNA R (PAGAMENTO À VISTA)
                     f_r = '=SE(INDIRETO("L"&LIN())=""; ""; SE(INDIRETO("P"&LIN())="Não"; INDIRETO("L"&LIN()); 0))'
@@ -575,6 +577,7 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
