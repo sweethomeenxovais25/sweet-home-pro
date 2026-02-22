@@ -265,6 +265,9 @@ if menu_selecionado == "🛒 Vendas":
                     f_m = '=SE(INDIRETO("L"&LIN())=""; ""; INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())))'
                     f_n = '=SE(INDIRETO("L"&LIN())=""; ""; SEERRO(INDIRETO("M"&LIN()) / INDIRETO("L"&LIN()); ""))'
                     
+                    # 👇 A NOVA FÓRMULA DA COLUNA R (PAGAMENTO À VISTA)
+                    f_r = '=SE(INDIRETO("L"&LIN())=""; ""; SE(INDIRETO("P"&LIN())="Não"; INDIRETO("L"&LIN()); 0))'
+                    
                     linha = [
                         "",                                 # 0: A (Vazio/ID)
                         datetime.now().strftime("%d/%m/%Y"),# 1: B (Data)
@@ -280,11 +283,11 @@ if menu_selecionado == "🛒 Vendas":
                         metodo,                             # 14: O (Método)
                         eh_parc,                            # 15: P (É Parcelado?)
                         n_p,                                # 16: Q (Nº Parcelas)
-                        "",                                 # 17: R
+                        f_r,                                # 17: R (PAGAMENTO À VISTA) <--- A FÓRMULA ENTROU AQUI!
                         t_liq/n_p if eh_parc=="Sim" else 0, # 18: S (Valor da Parcela)
                         t_liq if eh_parc=="Não" else 0,     # 19: T (Total Pago Agora)
                         t_liq if eh_parc=="Sim" else 0,     # 20: U (SALDO DEVEDOR 💰)
-                        detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", # 21: V (Vencimento)
+                        detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", # 21: V (Vencimento 1ª Parc)
                         "Pendente" if eh_parc=="Sim" else "Pago",                 # 22: W (Status)
                         f_atraso                            # 23: X (Fórmula Atraso)
                     ]
@@ -295,7 +298,6 @@ if menu_selecionado == "🛒 Vendas":
                 except Exception as e:
                     st.error(f"Erro ao registrar: {e}")
             else:
-                # O aviso do modo teste são e salvo!
                 st.info("🧪 Modo Teste: Simulação realizada com sucesso!")
 
             # --- 5. RECIBO PADRÃO SWEET HOME 🌸 ---
@@ -570,6 +572,7 @@ elif menu_selecionado == "👥 Clientes":
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar na planilha: {e}")
+
 
 
 
