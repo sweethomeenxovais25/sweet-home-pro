@@ -335,8 +335,8 @@ with st.sidebar:
         except Exception as e:
             st.error("Sincronize a planilha para gerar o backup.")
 
-# --- 👤 CONTROLE DE FLUXO DE ACESSO (Visualização) ---
-    with st.expander("👤 Controle de Fluxo de Acesso", expanded=False):
+# --- 👤 CONTROLE DE FLUXO (Visualização) ---
+    with st.expander("👤 Controle de Fluxo", expanded=False):
         st.write("Monitoramento de acesso dos usuários ao sistema.")
 
         try:
@@ -1539,6 +1539,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
