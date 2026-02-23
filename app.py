@@ -923,24 +923,29 @@ elif menu_selecionado == "💰 Financeiro":
             dados_f = aba_f_hist.get_all_values()
 
             if len(dados_f) > 1:
-                # Transforma em DataFrame usando a primeira linha como cabeçalho
+                # Cria o DataFrame com as colunas reais da sua planilha
                 df_f_hist = pd.DataFrame(dados_f[1:], columns=dados_f[0])
 
-                # Limpa espaços extras nos nomes das colunas e nos dados
-                df_f_hist.columns = df_f_hist.columns.str.strip()
-                df_f_hist['STATUS'] = df_f_hist['STATUS'].str.strip().str.upper()
-
-                # Filtra apenas os registros PAGO e pega os últimos 5
-                abatimentos = df_f_hist[df_f_hist['STATUS'] == "PAGO"].tail(5).iloc[::-1]
+                # Limpeza de segurança nos nomes das colunas
+                df_f_hist.columns = [c.strip() for c in df_f_hist.columns]
+                
+                # Filtro pelo STATUS que você definiu na Coluna G
+                if 'STATUS' in df_f_hist.columns:
+                    df_f_hist['STATUS'] = df_f_hist['STATUS'].str.strip().str.upper()
+                    # Filtra apenas o que está PAGO e pega os últimos 5
+                    abatimentos = df_f_hist[df_f_hist['STATUS'] == "PAGO"].tail(5).iloc[::-1]
+                else:
+                    abatimentos = pd.DataFrame()
 
                 if not abatimentos.empty:
+                    # Exibição organizada com os nomes de colunas que você passou
                     st.dataframe(
-                        abatimentos[['DATA', 'CLIENTE', 'ENTRADA R$', 'OBS']],
+                        abatimentos[['DATA', 'NOME', 'VALOR_PAGO', 'OBS']],
                         column_config={
                             "DATA": st.column_config.TextColumn("📅 Data"),
-                            "CLIENTE": st.column_config.TextColumn("👤 Cliente"),
-                            "ENTRADA R$": st.column_config.TextColumn("💰 Valor (R$)"),
-                            "OBS": st.column_config.TextColumn("📝 Obs")
+                            "NOME": st.column_config.TextColumn("👤 Cliente"),
+                            "VALOR_PAGO": st.column_config.TextColumn("💰 Valor Pago"),
+                            "OBS": st.column_config.TextColumn("📝 Observação")
                         },
                         use_container_width=True,
                         hide_index=True
@@ -951,7 +956,6 @@ elif menu_selecionado == "💰 Financeiro":
                 st.info("ℹ️ A planilha financeira ainda está vazia.")
 
         except Exception as e:
-            # Mostramos o erro real se você estiver logado como Admin para facilitar o ajuste
             if st.session_state.get('usuario_logado') == 'Admin':
                 st.error(f"Erro técnico: {e}")
             else:
@@ -1569,6 +1573,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
