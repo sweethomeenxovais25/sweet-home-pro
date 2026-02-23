@@ -13,6 +13,7 @@ import google.generativeai as genai
 from PIL import Image
 import requests
 import time
+import pytz
 
 def verificar_status_odoo(codigo_produto):
     cod_limpo = str(codigo_produto).strip()
@@ -177,6 +178,45 @@ ESPECIFICACOES = [
     "https://www.googleapis.com/auth/drive.file"
 ]
 
+# 👇 1. PRIMEIRO: O SISTEMA SE CONECTA AO GOOGLE E ABRE A PLANILHA
+try:
+    # Atenção: Esta parte puxa as credenciais e cria a variável "planilha_mestre"
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], ESPECIFICACOES)
+    client = gspread.authorize(creds)
+    planilha_mestre = client.open_by_key(ID_PLANILHA)
+except Exception as e:
+    st.error(f"Erro na conexão com o Google Sheets: {e}")
+    st.stop() # Se não conectar, ele para aqui e avisa.
+
+# 👇 2. DEPOIS: O GATILHO RODA (Agora que a planilha_mestre já existe!)
+# ====================================================
+# 🤖 GATILHO DE REGISTRO (VERSÃO COM HORÁRIO DE RECIFE)
+# ====================================================
+if st.session_state.get('precisa_registrar_acesso'):
+    try:
+        aba_usuario = planilha_mestre.worksheet("USUARIO") 
+        
+        # --- CONFIGURAÇÃO DE FUSO HORÁRIO ---
+        fuso_br = pytz.timezone('America/Sao_Paulo') # Recife segue o mesmo de SP/Brasília
+        agora = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
+        # ------------------------------------
+        
+        usuario_logado = st.session_state.get('usuario_logado')
+        celula_nome = aba_usuario.find(usuario_logado)
+        
+        if celula_nome:
+            cabecalhos = aba_usuario.row_values(1)
+            if "ULTIMO_ACESSO" in cabecalhos:
+                col_acesso = cabecalhos.index("ULTIMO_ACESSO") + 1
+                aba_usuario.update_cell(celula_nome.row, col_acesso, agora)
+                st.toast(f"Logado como {usuario_logado}. Ponto registrado! 🕒", icon="✅")
+            
+            st.session_state['precisa_registrar_acesso'] = False 
+            
+    except Exception as e:
+        print(f"Erro ao registrar: {e}") 
+        st.session_state['precisa_registrar_acesso'] = False
+        
 # ☁️ Função de Upload Rápido para Cloudinary (Nova Engine de Arquivos)
 def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
     try:
@@ -1461,6 +1501,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
