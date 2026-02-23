@@ -16,7 +16,7 @@ from PIL import Image
 # 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="🧪 TESTE - Sweet Home", 
+    page_title="Sweet Home", 
     page_icon="logo_sweet.png", 
     layout="wide"
 )
@@ -1302,6 +1302,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
