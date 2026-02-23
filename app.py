@@ -814,13 +814,28 @@ elif menu_selecionado == "💰 Financeiro":
             st.markdown("---")
             col_t1, col_t2 = st.columns([2, 1])
             with col_t1:
+                # Define a cor e a mensagem baseada no índice
                 if indice_liquidez >= 70:
+                    cor_barra = "#28a745" # Verde
                     st.success(f"🟢 **Saúde de Caixa: EXCELENTE** ({indice_liquidez:.1f}% recebido à vista)")
                 elif indice_liquidez >= 40:
+                    cor_barra = "#ffa500" # Amarelo/Laranja
                     st.warning(f"🟡 **Saúde de Caixa: ATENÇÃO** ({indice_liquidez:.1f}% à vista)")
                 else:
+                    cor_barra = "#ff4b4b" # Vermelho
                     st.error(f"🔴 **Saúde de Caixa: CRÍTICA** (Apenas {indice_liquidez:.1f}% à vista)")
-                st.progress(min(indice_liquidez/100, 1.0))
+                
+                # --- Barra de Progresso Customizada (Acompanha a cor) ---
+                progresso = min(indice_liquidez/100, 1.0)
+                st.markdown(
+                    f"""
+                    <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 10px;">
+                        <div style="width: {progresso*100}%; background-color: {cor_barra}; height: 10px; border-radius: 10px;">
+                        </div>
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
             
             with col_t2:
                 st.metric("Recebíveis (Futuro)", f"R$ {saldo_devedor:,.2f}", help="Dinheiro que entrará via Sweet Flex.")
@@ -1573,6 +1588,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
