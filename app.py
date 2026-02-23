@@ -13,6 +13,7 @@ import google.generativeai as genai
 from PIL import Image
 import requests
 import time
+from datetime import datetime
 import pytz
 
 def verificar_status_odoo(codigo_produto):
@@ -1534,6 +1535,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
