@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import gspread
@@ -11,6 +12,26 @@ import cloudinary.uploader
 import io
 import google.generativeai as genai
 from PIL import Image
+import requests
+import time
+
+def verificar_status_odoo(codigo_produto):
+    cod_limpo = str(codigo_produto).strip()
+    url_busca = f"https://sweethomecomfort.odoo.com/shop?&search={cod_limpo}"
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resposta = requests.get(url_busca, headers=headers, timeout=10)
+        conteudo = resposta.text.lower()
+        
+        # Validação rigorosa: se o código pesquisado não retorna produto
+        if f'nenhum resultado para "{cod_limpo.lower()}"' in conteudo or "nenhum resultado encontrado" in conteudo:
+            return False, ""
+        
+        if "oe_product" in conteudo or "o_wsale_products_item" in conteudo:
+            return True, url_busca
+        return False, ""
+    except:
+        return False, ""
 
 # ==========================================
 # 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
@@ -1176,37 +1197,176 @@ elif menu_selecionado == "📂 Documentos":
     with st.expander("🚀 Linha de Montagem Odoo (Site)", expanded=True):
         t_falta, t_pronto = st.tabs(["🔴 1. Falta Foto (Bia)", "🟢 2. Pronto p/ Site (Você)"])
         
+        # --- ABA 1: O QUE A BIA PRECISA FOTOGRAFAR ---
         with t_falta:
-            st.write("**Produtos no estoque aguardando foto para o site:**")
+            st.write("**Produtos no inventário aguardando foto para o site:**")
             if not df_full_inv.empty:
                 prods_com_foto = []
+                # Verifica na aba DOCUMENTOS quem já tem foto
                 if not df_docs.empty and 'VINCULO' in df_docs.columns:
                     fotos = df_docs[df_docs['TIPO'] == "Foto de Produto"]
                     prods_com_foto = [str(p).split(" - ")[0].strip() for p in fotos['VINCULO'].dropna() if " - " in str(p)]
                 
-                df_falta = df_full_inv[~df_full_inv['CÓD. PRÓDUTO'].astype(str).str.strip().isin(prods_com_foto)]
-                if not df_falta.empty:
-                    st.dataframe(df_falta[['CÓD. PRÓDUTO', 'NOME DO PRODUTO', 'ESTOQUE ATUAL']], hide_index=True)
-                else: 
-                    st.success("🎉 Nenhuma pendência! O estoque inteiro tem foto.")
+                # Filtra o inventário tirando quem já tem foto
+                df_falta = df_full_inv[~df_full_inv['CÓD. PRÓDUTO'].astype(str).str.strip().isin(prods_com_foto)].copy()
+                
+                # Limpeza de segurança: Remove linhas vazias e a linha de 'TOTAIS'
+                df_falta = df_falta[
+                    (df_falta['CÓD. PRÓDUTO'].str.strip() != "") & 
+                    (~df_falta['CÓD. PRÓDUTO'].str.upper().str.contains("TOTAIS", na=False))
+                ]
 
+                if not df_falta.empty:
+                    # 💡 AQUI ESTÁ A MUDANÇA: Substituímos ESTOQUE ATUAL por STATUS ODOO
+                    st.dataframe(
+                        df_falta[['CÓD. PRÓDUTO', 'NOME DO PRODUTO', 'STATUS ODOO']], 
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                else: 
+                    st.success("🎉 Nenhuma pendência! O inventário inteiro tem foto.")
+
+        # --- ABA 2: O QUE VOCÊ PRECISA PUBLICAR ---
         with t_pronto:
             st.write("**Fotos tiradas! Coloque no site e marque como publicado:**")
             if not df_docs.empty and 'STATUS_ODOO' in df_docs.columns:
+                # Puxa apenas o que a Bia fotografou e ainda não foi pro site
                 prontos = df_docs[(df_docs['TIPO'] == "Foto de Produto") & (df_docs['STATUS_ODOO'] == "Pronto para Site")]
+                
                 if not prontos.empty:
                     for idx, r in prontos.iterrows():
                         c1, c2, c3 = st.columns([3, 1, 1])
                         c1.write(f"📦 **{r['VINCULO']}**")
                         c2.link_button("🖼️ Ver Foto", r['LINK_DRIVE'], use_container_width=True)
+                        
+                        # Botão manual (caso você não queira usar o robô e queira dar baixa na mão)
                         if c3.button("✅ Publicado", key=f"btn_odoo_{idx}"):
-                            aba_doc = planilha_mestre.worksheet("DOCUMENTOS")
-                            cell = aba_doc.find(r['ID_ARQUIVO'])
-                            aba_doc.update_cell(cell.row, 7, "Publicado no Odoo")
-                            st.success("Atualizado!"); st.cache_resource.clear(); st.rerun()
+                            try:
+                                aba_doc = planilha_mestre.worksheet("DOCUMENTOS")
+                                cell = aba_doc.find(r['ID_ARQUIVO'])
+                                aba_doc.update_cell(cell.row, 7, "Publicado no Odoo")
+                                st.success("Atualizado!")
+                                st.cache_data.clear()
+                                st.cache_resource.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar: {e}")
                         st.divider()
                 else: 
-                    st.info("Sua fila de trabalho está limpa.")
+                    st.info("Sua fila de trabalho está limpa. 🚀")
+
+    # --- 🤖 SEÇÃO: SINCRONIZADOR INTELIGENTE ODOO (V14) ---
+    with st.expander("🤖 Sincronizador Inteligente (Análise de Versões)", expanded=True):
+        st.write("Diagnóstico de versões e limpeza automática da vitrine.")
+
+        # 1. INICIALIZAÇÃO DO COFRE DE MEMÓRIA (Fundamental para o relatório não sumir)
+        if 'relatorio_fixo' not in st.session_state:
+            st.session_state.relatorio_fixo = None
+
+        # Botão de ação principal
+        if st.button("🚀 Iniciar Nova Varredura Completa", use_container_width=True):
+            try:
+                # --- CARREGAMENTO E FILTRO DE TOTAIS ---
+                aba_inv = planilha_mestre.worksheet("INVENTÁRIO")
+                dados_inv = aba_inv.get_all_values()
+                df_inv = pd.DataFrame(dados_inv[1:], columns=dados_inv[0])
+                
+                # Localiza a linha de TOTAIS para o robô parar
+                idx_limite = df_inv[df_inv['CÓD. PRÓDUTO'].str.upper().str.contains("TOTAIS", na=False)].index.min()
+                df_proc = df_inv.iloc[:idx_limite].copy() if not pd.isna(idx_limite) else df_inv.copy()
+                df_proc = df_proc[df_proc['CÓD. PRÓDUTO'].str.strip() != ""]
+
+                if not df_proc.empty:
+                    # Mapeamento de versões (famílias .1, .2, etc)
+                    df_proc['BASE'] = df_proc['CÓD. PRÓDUTO'].apply(lambda x: str(x).split('.')[0].strip())
+                    mapa_mais_recente = df_proc.groupby('BASE')['CÓD. PRÓDUTO'].last().to_dict()
+
+                    st.info(f"🔍 Varrendo {len(df_proc)} linhas do inventário...")
+                    barra = st.progress(0)
+                    status_txt = st.empty()
+                    dados_acumulados = []
+                    
+                    # Acessa a aba DOCUMENTOS para a integração
+                    aba_doc = planilha_mestre.worksheet("DOCUMENTOS")
+
+                    for i, (idx, row) in enumerate(df_proc.iterrows()):
+                        cod_atual = str(row['CÓD. PRÓDUTO']).strip()
+                        base_cod = row['BASE']
+                        versao_topo = mapa_mais_recente[base_cod]
+                        linha_p = idx + 2
+                        
+                        status_txt.markdown(f"⏳ **Analisando:** `{cod_atual}`")
+                        
+                        # Chamada ao robô de busca
+                        achou, link_ref = verificar_status_odoo(cod_atual)
+                        time.sleep(1.3) # Respeito ao limite do Google
+
+                        if achou:
+                            # Lógica de diagnóstico de versão
+                            if cod_atual == versao_topo:
+                                status_inv, res_obs = "Publicado", "✅ Publicado (Atualizado)"
+                            else:
+                                status_inv, res_obs = "Publicado (Site Desatualizado)", "⚠️ Site com Versão Antiga"
+                            
+                            # Atualiza ABA INVENTÁRIO
+                            aba_inv.update_cell(linha_p, 11, link_ref) # Link
+                            aba_inv.update_cell(linha_p, 12, status_inv) # Status
+                            
+                            # 🔗 INTEGRAÇÃO COM DOCUMENTOS (Limpeza da Linha de Montagem)
+                            if not df_docs.empty:
+                                # Busca se o código atual está no vínculo das fotos
+                                matches = df_docs[df_docs['VINCULO'].str.contains(cod_atual, na=False)].index
+                                for m_idx in matches:
+                                    aba_doc.update_cell(int(m_idx) + 2, 7, "Publicado no Odoo")
+                        else:
+                            # Caso não encontre no site
+                            aba_inv.update_cell(linha_p, 12, "Não Publicado")
+                            res_obs = "❌ Não Encontrado"
+
+                        dados_acumulados.append({
+                            "Linha": linha_p,
+                            "Cód. SKU": cod_atual,
+                            "Status Site": res_obs,
+                            "Ação": "OK" if "✅" in res_obs else ("⚠️ Atualizar Odoo" if "⚠️" in res_obs else "❌ Publicar")
+                        })
+                        barra.progress((i + 1) / len(df_proc))
+
+                    # 💾 SALVANDO RESULTADO NO COFRE
+                    st.session_state.relatorio_fixo = pd.DataFrame(dados_acumulados)
+                    status_txt.empty()
+                    st.success("Varredura Finalizada!")
+                    
+                    # Limpa o cache e força o app a ler as planilhas novas
+                    st.cache_data.clear()
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Erro na varredura: {e}")
+
+        # --- 📋 EXIBIÇÃO DO RELATÓRIO FIXO ---
+        # Esta parte fica fora do botão para não sumir após o rerun
+        if st.session_state.relatorio_fixo is not None:
+            st.divider()
+            with st.expander("📊 Relatório da Última Verificação (Fixo)", expanded=True):
+                
+                # Estilização de cores (Verde, Amarelo, Vermelho)
+                def style_status_cores(val):
+                    if "✅" in val: return 'background-color: #d4edda; color: #155724'
+                    if "⚠️" in val: return 'background-color: #fff3cd; color: #856404'
+                    if "❌" in val: return 'background-color: #f8d7da; color: #721c24'
+                    return ''
+
+                st.dataframe(
+                    st.session_state.relatorio_fixo.style.applymap(style_status_cores, subset=['Status Site']),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.caption("ℹ️ Este relatório é mantido até você iniciar uma nova varredura.")
+                
+                if st.button("🔄 Atualizar Vitrine Odoo Agora", key="btn_manual_refresh"):
+                    st.cache_data.clear()
+                    st.rerun()
 
     st.divider()
     st.write("### 📤 Enviar Arquivo")
@@ -1302,6 +1462,8 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
+
 
 
 
