@@ -329,6 +329,39 @@ with st.sidebar:
                 st.download_button("📥 Baixar Financeiro", df_financeiro.to_csv(index=False).encode('utf-8'), f"Financeiro_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
         except Exception as e:
             st.error("Sincronize a planilha para gerar o backup.")
+
+# --- 👤 CONTROLE DE FLUXO DE ACESSO (Visualização) ---
+    with st.expander("👤 Controle de Fluxo de Acesso", expanded=False):
+        st.write("Monitoramento de acesso dos usuários ao sistema.")
+
+        try:
+            # Carrega a aba USUARIO fresca da planilha
+            aba_usuario = planilha_mestre.worksheet("USUARIO")
+            dados_usuarios = aba_usuario.get_all_values()
+
+            if len(dados_usuarios) > 1:
+                # Transforma os dados em uma tabela (DataFrame)
+                df_usuarios = pd.DataFrame(dados_usuarios[1:], columns=dados_usuarios[0])
+
+                # Deixa o quadro elegante e fácil de ler
+                st.markdown("### 📋 Últimos Acessos Registrados")
+                
+                st.dataframe(
+                    df_usuarios,
+                    column_config={
+                        "USUARIO": st.column_config.TextColumn("👤 Nome do Usuário", width="medium"),
+                        "ULTIMO_ACESSO": st.column_config.TextColumn("🕒 Último Acesso (Data e Hora)")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.caption("O registro de horário é feito automaticamente toda vez que o login é efetuado com sucesso.")
+            else:
+                st.info("A aba 'USUARIO' não possui registros válidos.")
+
+        except Exception as e:
+            st.error(f"Erro ao carregar o relatório de acessos: {e}")
             
 # ==========================================
 # --- SEÇÃO 1: VENDAS (SISTEMA DE CARRINHO MULTI-ITENS) ---
@@ -1501,6 +1534,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
