@@ -379,8 +379,14 @@ if menu_selecionado == "🛒 Vendas":
                     "custo": custo_un,
                     "subtotal": qtd_v * val_v
                 }
-                st.session_state['carrinho'].append(item_carrinho)
+                
+                # --- A MÁGICA ENTRA AQUI ---
+                cesta_temporaria = st.session_state['carrinho']
+                cesta_temporaria.append(item_carrinho)
+                st.session_state['carrinho'] = cesta_temporaria
+                
                 st.toast(f"✅ {nome_p} no carrinho!")
+                st.rerun()
 
     # --- 3. EXIBIÇÃO DO CARRINHO E FINALIZAÇÃO ---
     if st.session_state['carrinho']:
@@ -1296,6 +1302,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
