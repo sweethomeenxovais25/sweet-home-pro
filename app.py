@@ -158,6 +158,10 @@ if not st.session_state['autenticado']:
                         if str(usuarios_permitidos[usuario_input]) == senha_input:
                             st.session_state['autenticado'] = True
                             st.session_state['usuario_logado'] = usuario_input
+                            
+                            # 💡 LINHA ESSENCIAL ADICIONADA: Ativa o registro na Fase 3
+                            st.session_state['precisa_registrar_acesso'] = True
+                            
                             st.rerun()
                         else:
                             st.error("❌ Senha incorreta.")
@@ -181,13 +185,12 @@ ESPECIFICACOES = [
 
 # 👇 1. PRIMEIRO: O SISTEMA SE CONECTA AO GOOGLE E ABRE A PLANILHA
 try:
-    # Atenção: Esta parte puxa as credenciais e cria a variável "planilha_mestre"
     creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], ESPECIFICACOES)
     client = gspread.authorize(creds)
     planilha_mestre = client.open_by_key(ID_PLANILHA)
 except Exception as e:
     st.error(f"Erro na conexão com o Google Sheets: {e}")
-    st.stop() # Se não conectar, ele para aqui e avisa.
+    st.stop()
 
 # 👇 2. DEPOIS: O GATILHO RODA (Agora que a planilha_mestre já existe!)
 # ====================================================
@@ -197,10 +200,9 @@ if st.session_state.get('precisa_registrar_acesso'):
     try:
         aba_usuario = planilha_mestre.worksheet("USUARIO") 
         
-        # --- CONFIGURAÇÃO DE FUSO HORÁRIO ---
-        fuso_br = pytz.timezone('America/Sao_Paulo') # Recife segue o mesmo de SP/Brasília
+        # --- CONFIGURAÇÃO DE FUSO HORÁRIO (RECIFE/BRASÍLIA) ---
+        fuso_br = pytz.timezone('America/Sao_Paulo') 
         agora = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
-        # ------------------------------------
         
         usuario_logado = st.session_state.get('usuario_logado')
         celula_nome = aba_usuario.find(usuario_logado)
@@ -212,9 +214,11 @@ if st.session_state.get('precisa_registrar_acesso'):
                 aba_usuario.update_cell(celula_nome.row, col_acesso, agora)
                 st.toast(f"Logado como {usuario_logado}. Ponto registrado! 🕒", icon="✅")
             
+            # Desliga o sinalizador para não repetir o registro no próximo clique
             st.session_state['precisa_registrar_acesso'] = False 
             
     except Exception as e:
+        # Erro discreto no log do servidor
         print(f"Erro ao registrar: {e}") 
         st.session_state['precisa_registrar_acesso'] = False
         
@@ -1535,6 +1539,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
