@@ -1257,8 +1257,6 @@ elif menu_selecionado == "💰 Financeiro":
         except Exception as e:
             st.error(f"⚠️ Erro no núcleo de processamento gerencial: {e}")
             
-    st.divider() # Divisória para separar da Ficha de Cliente logo abaixo
-    
     st.markdown("### 🔍 Ficha de Cliente (Extrato Dinâmico)")
     opcoes_ficha = sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
     sel_ficha = st.selectbox("Selecione para ver o que ela deve:", ["---"] + opcoes_ficha, key="ficha_sel_cliente")
@@ -1388,8 +1386,8 @@ elif menu_selecionado == "💰 Financeiro":
                             {msg_base_ia}
                             """
                             
-                            # 💡 AJUSTE DA IA AQUI: Apenas modelos estáveis e rastreio de erro ativo
-                            modelos = ["gemini-1.5-flash", "gemini-1.5-pro"]
+                            # 💡 AJUSTE DA IA AQUI: Devolvendo os motores 2.5 e 2.0 que você estava usando
+                            modelos = ["gemini-2.5-flash", "gemini-2.0-flash"]
                             resultado_ia = None
                             erro_google = ""
                             
@@ -1427,12 +1425,6 @@ elif menu_selecionado == "💰 Financeiro":
                 
         else: 
             st.success("✅ Esta cliente não possui débitos pendentes.")
-
-        st.write("#### ⏳ Histórico de Vendas Localizado")
-        if not v_hist.empty:
-            st.dataframe(v_hist[['DATA DA VENDA', 'PRODUTO', 'TOTAL R$', 'SALDO DEVEDOR', 'STATUS']], use_container_width=True, hide_index=True)
-        else: 
-            st.info("Nenhuma compra registrada para esta cliente ainda.")
 
         st.write("#### ⏳ Histórico de Vendas Localizado")
         if not v_hist.empty:
@@ -2028,6 +2020,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
