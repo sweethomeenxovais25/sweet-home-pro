@@ -1388,15 +1388,20 @@ elif menu_selecionado == "💰 Financeiro":
                             {msg_base_ia}
                             """
                             
-                            modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+                            # 💡 AJUSTE DA IA AQUI: Apenas modelos estáveis e rastreio de erro ativo
+                            modelos = ["gemini-1.5-flash", "gemini-1.5-pro"]
                             resultado_ia = None
+                            erro_google = ""
                             
                             for m in modelos:
                                 try:
                                     modelo_gen = genai.GenerativeModel(m)
                                     resultado_ia = modelo_gen.generate_content(prompt)
-                                    break
-                                except: continue
+                                    if resultado_ia:
+                                        break
+                                except Exception as e:
+                                    erro_google = str(e)
+                                    continue
                                 
                             if resultado_ia:
                                 st.success("✨ Mensagem Otimizada com Sucesso!")
@@ -1413,7 +1418,7 @@ elif menu_selecionado == "💰 Financeiro":
                                     st.session_state['ia_ficha_ativa'] = False
                                     st.rerun()
                             else:
-                                st.error("⚠️ Nenhum modelo de IA suportado encontrado na sua API.")
+                                st.error(f"⚠️ A IA falhou ao gerar. Motivo do erro: {erro_google}")
                         except Exception as e_ia:
                             st.error(f"⚠️ Erro de comunicação com o Google: {e_ia}")
 
@@ -1422,6 +1427,12 @@ elif menu_selecionado == "💰 Financeiro":
                 
         else: 
             st.success("✅ Esta cliente não possui débitos pendentes.")
+
+        st.write("#### ⏳ Histórico de Vendas Localizado")
+        if not v_hist.empty:
+            st.dataframe(v_hist[['DATA DA VENDA', 'PRODUTO', 'TOTAL R$', 'SALDO DEVEDOR', 'STATUS']], use_container_width=True, hide_index=True)
+        else: 
+            st.info("Nenhuma compra registrada para esta cliente ainda.")
 
         st.write("#### ⏳ Histórico de Vendas Localizado")
         if not v_hist.empty:
@@ -2017,6 +2028,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
