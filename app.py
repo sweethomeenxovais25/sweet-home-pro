@@ -1386,7 +1386,6 @@ elif menu_selecionado == "💰 Financeiro":
                             {msg_base_ia}
                             """
                             
-                            # 💡 AJUSTE DA IA AQUI: Devolvendo os motores 2.5 e 2.0 que você estava usando
                             modelos = ["gemini-2.5-flash", "gemini-2.0-flash"]
                             resultado_ia = None
                             erro_google = ""
@@ -1398,7 +1397,12 @@ elif menu_selecionado == "💰 Financeiro":
                                     if resultado_ia:
                                         break
                                 except Exception as e:
-                                    erro_google = str(e)
+                                    # 💡 Tradutor de Erros do Google em Ação!
+                                    erro_str = str(e)
+                                    if "429" in erro_str or "quota" in erro_str.lower():
+                                        erro_google = "⏳ Limite de consultas rápidas atingido. Por favor, aguarde 30 segundos e clique novamente."
+                                    else:
+                                        erro_google = erro_str
                                     continue
                                 
                             if resultado_ia:
@@ -1416,7 +1420,7 @@ elif menu_selecionado == "💰 Financeiro":
                                     st.session_state['ia_ficha_ativa'] = False
                                     st.rerun()
                             else:
-                                st.error(f"⚠️ A IA falhou ao gerar. Motivo do erro: {erro_google}")
+                                st.error(f"⚠️ {erro_google}")
                         except Exception as e_ia:
                             st.error(f"⚠️ Erro de comunicação com o Google: {e_ia}")
 
@@ -2020,6 +2024,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
