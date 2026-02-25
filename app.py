@@ -13,7 +13,6 @@ import google.generativeai as genai
 from PIL import Image
 import requests
 import time
-from datetime import datetime
 import pytz
 
 def verificar_status_odoo(codigo_produto):
@@ -183,14 +182,20 @@ ESPECIFICACOES = [
     "https://www.googleapis.com/auth/drive.file"
 ]
 
-# 👇 1. PRIMEIRO: O SISTEMA SE CONECTA AO GOOGLE E ABRE A PLANILHA
-try:
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], ESPECIFICACOES)
-    client = gspread.authorize(creds)
-    planilha_mestre = client.open_by_key(ID_PLANILHA)
-except Exception as e:
-    st.error(f"Erro na conexão com o Google Sheets: {e}")
-    st.stop()
+# 👇 1. PRIMEIRO: O SISTEMA SE CONECTA AO GOOGLE E ABRE A PLANILHA (AGORA COM ESCUDO!)
+@st.cache_resource
+def conectar_google():
+    try:
+        if "gcp_service_account" in st.secrets:
+            creds_info = st.secrets["gcp_service_account"]
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
+            return gspread.authorize(creds).open_by_key(ID_PLANILHA)
+        return None
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        st.stop()
+
+planilha_mestre = conectar_google()
 
 # 👇 2. DEPOIS: O GATILHO RODA (Agora que a planilha_mestre já existe!)
 # ====================================================
@@ -248,21 +253,7 @@ def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
         st.error(f"Erro no servidor de arquivos: {e}")
         return None, None
 
-@st.cache_resource
-def conectar_google():
-    try:
-        if "gcp_service_account" in st.secrets:
-            creds_info = st.secrets["gcp_service_account"]
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
-            return gspread.authorize(creds).open_by_key(ID_PLANILHA)
-        return None
-    except Exception as e:
-        st.error(f"Erro de conexão: {e}")
-        return None
-
-planilha_mestre = conectar_google()
-
-@st.cache_resource(ttl=600)
+@st.cache_data(ttl=60) # Reduzir para 60 ajuda a manter o estoque mais fresco
 def carregar_dados():
     if not planilha_mestre: 
         return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -318,6 +309,7 @@ with st.sidebar:
     
     if st.button("🔄 Sincronizar Planilha", key="btn_sincronizar"):
         st.cache_resource.clear()
+        st.cache_data.clear()
         st.rerun()
 
     st.divider()
@@ -506,6 +498,7 @@ if menu_selecionado == "🛒 Vendas":
             c_btn1, c_btn2 = st.columns(2)
             if c_btn1.button("🗑️ Limpar Tudo", use_container_width=True):
                 st.session_state['carrinho'] = []
+                st.cache_data.clear()
                 st.rerun()
 
             if c_btn2.button("Finalizar Venda 🚀", type="primary", use_container_width=True):
@@ -601,6 +594,7 @@ if menu_selecionado == "🛒 Vendas":
 
                         # Limpeza Final (AGORA SIM, BEM GUARDADA NO LUGAR CERTO)
                         st.session_state['carrinho'] = []
+                        st.cache_data.clear()
                         st.cache_resource.clear()
                         
                     except Exception as e:
@@ -742,6 +736,7 @@ if menu_selecionado == "🛒 Vendas":
                                     "total": n_t_liq,
                                     "metodo": novo_metodo
                                 }
+                                st.cache_data.clear()
                                 st.cache_resource.clear()
                                 st.rerun()
                             except Exception as e:
@@ -752,6 +747,7 @@ if menu_selecionado == "🛒 Vendas":
                                 try:
                                     aba_vendas.delete_rows(linha_real)
                                     st.session_state['recibo_correcao'] = {"tipo": "excluido", "linha": linha_real}
+                                    st.cache_data.clear()
                                     st.cache_resource.clear()
                                     st.rerun()
                                 except Exception as e:
@@ -937,6 +933,7 @@ elif menu_selecionado == "💰 Financeiro":
                         aba_f = planilha_mestre.worksheet("FINANCEIRO")
                         aba_f.append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), c_pg.split(" - ")[0], nome_c_alvo, 0, v_pg, "PAGO", f"{meio}: {obs}"], value_input_option='RAW')
                         st.success(f"✅ Recebido de {nome_c_alvo} processado!")
+                        st.cache_data.clear()
                         st.cache_resource.clear(); st.rerun()
                     except Exception as e: st.error(f"Erro no FIFO: {e}")
 
@@ -1556,7 +1553,7 @@ elif menu_selecionado == "📦 Estoque":
                                 aba.update_acell(f"C{lin_p}", comp_c + q_nova)
                                 aba.update_acell(f"J{lin_p}", datetime.now().strftime("%d/%m/%Y"))
                                 planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "REPOSIÇÃO", nome_e, f"+{q_nova} un.", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                                st.success("Estoque Atualizado!"); st.cache_resource.clear(); st.rerun()
+                                st.success("Estoque Atualizado!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
 
                 elif acao == "2. Novo Lote (Preço Novo)":
                     with st.form("f_lote"):
@@ -1578,7 +1575,7 @@ elif menu_selecionado == "📦 Estoque":
                                 if cel_tot: aba.insert_row(nova_linha, index=cel_tot.row, value_input_option='RAW')
                                 else: aba.append_row(nova_linha, value_input_option='RAW')
                                 planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "NOVO LOTE", nome_e, f"Lote {n_cod}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                                st.success(f"Lote {n_cod} criado!"); st.cache_resource.clear(); st.rerun()
+                                st.success(f"Lote {n_cod} criado!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
 
                 elif acao == "3. Correção":
                     with st.form("f_cor"):
@@ -1588,7 +1585,7 @@ elif menu_selecionado == "📦 Estoque":
                                 aba = planilha_mestre.worksheet("INVENTÁRIO")
                                 aba.update_acell(f"C{lin_p}", real + vend_g)
                                 planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CORREÇÃO", nome_e, f"Ajustado para {real}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                                st.success("Corrigido!"); st.cache_resource.clear(); st.rerun()
+                                st.success("Corrigido!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
 
     st.divider()
     with st.expander("➕ Cadastrar Novo Produto"):
@@ -1605,7 +1602,7 @@ elif menu_selecionado == "📦 Estoque":
                     if cel_tot: aba.insert_row(linha_manual, index=cel_tot.row, value_input_option='RAW')
                     else: aba.append_row(linha_manual, value_input_option='RAW')
                     planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CADASTRO", n_n, f"Cód: {n_c}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                    st.success("✅ Cadastrado!"); st.cache_resource.clear(); st.rerun()
+                    st.success("✅ Cadastrado!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
 
     st.divider()
     st.write("### 📜 Histórico de Movimentações (Banco de Dados)")
@@ -1679,6 +1676,7 @@ elif menu_selecionado == "👥 Clientes":
                         codigo = f"CLI-{len(aba_cli_sheet.get_all_values()):03d}"
                         aba_cli_sheet.append_row([codigo, n_nome.strip(), n_zap.strip(), n_end.strip(), datetime.now().strftime("%d/%m/%Y"), n_vale, "", "Completo" if n_end else "Incompleto"], value_input_option='USER_ENTERED')
                         st.success(f"✅ {n_nome} cadastrada!")
+                        st.cache_data.clear()
                         st.cache_resource.clear()
                     except Exception as e:
                         st.error(f"Erro: {e}")
@@ -1737,6 +1735,7 @@ elif menu_selecionado == "👥 Clientes":
                         aba_cli_sheet.update_cell(num_linha, 8, novo_status)
 
                         st.success(f"✅ Dados de {novo_nome} atualizados!")
+                        st.cache_data.clear()
                         st.cache_resource.clear()
                         st.rerun()
                     except Exception as e:
@@ -1994,7 +1993,7 @@ elif menu_selecionado == "📂 Documentos":
                                 datetime.now().strftime("%d/%m/%Y %H:%M"),
                                 cat_escolhida, nome_limpo, f_id, f_link, vinculo_final, status_odoo
                             ], value_input_option='USER_ENTERED')
-                            st.success(f"✅ Arquivado com sucesso!"); st.cache_resource.clear(); st.rerun()
+                            st.success(f"✅ Arquivado com sucesso!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                         except Exception as e: 
                             st.error(f"Erro na planilha: {e}")
 
@@ -2022,6 +2021,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
