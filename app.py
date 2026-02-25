@@ -1387,7 +1387,7 @@ elif menu_selecionado == "💰 Financeiro":
                             """
                             
                             # 💡 AJUSTE DA IA: Removido o modelo velho (pro) e inserido o tradutor de limites (429)
-                            modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+                            modelos = ["gemini-2.0-flash"]
                             resultado_ia = None
                             erro_google = ""
                             
@@ -2022,6 +2022,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
