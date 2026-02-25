@@ -408,7 +408,7 @@ if menu_selecionado == "🛒 Vendas":
                     telefone_sugerido = banco_de_clientes[id_cliente].get('fone', "")
             
             c_nome_novo = st.text_input("Nome Completo (se novo)", key="venda_nome_novo")
-            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key="zap_venda_input")
+            c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_venda_input_{c_sel}")
             vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor_input")
 
         with col_v2:
@@ -2032,6 +2032,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
