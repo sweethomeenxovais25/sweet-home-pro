@@ -2764,6 +2764,247 @@ elif menu_selecionado == "🏭 Compras e Despesas":
         else:
             st.info("Nenhum fornecedor cadastrado no banco de dados.")
 
+# ==========================================================
+# 📢 MÓDULO DE GESTÃO DE MARKETING (O "TRELLO" DA SWEET HOME)
+# ==========================================================
+elif menu_selecionado == "📢 Gestão de Marketing":
+    st.title("📢 Gestão de Marketing e Conteúdo")
+    st.write("A sua central de comando para alinhar ideias, aprovar artes e dominar as redes sociais.")
+    
+    # Preparação dos Dados
+    df_mkt = df_marketing.copy()
+    if not df_mkt.empty:
+        df_mkt.columns = [str(c).strip().upper() for c in df_mkt.columns]
+    
+    # 📊 DASHBOARD DE MÉTRICAS (VISÃO DO DIRETOR)
+    st.divider()
+    st.write("#### 📊 Visão Geral da Produção")
+    
+    # Cálculo das Métricas
+    total_pedidos = len(df_mkt) if not df_mkt.empty else 0
+    
+    if not df_mkt.empty:
+        em_producao = len(df_mkt[df_mkt['STATUS'].str.contains('Em Produção', case=False, na=False)])
+        falta_postar = len(df_mkt[df_mkt['STATUS'].str.contains('Falta Postar', case=False, na=False)])
+        concluidos = len(df_mkt[df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)])
+    else:
+        em_producao = falta_postar = concluidos = 0
+        
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Fila & Produção", f"{em_producao}", help="Tarefas que o Gestor de Marketing precisa criar/editar.")
+    m2.metric("Aguardando Postagem", f"{falta_postar}", delta="Atenção", delta_color="inverse", help="Artes prontas! Só falta aprovar e colocar no Instagram.")
+    m3.metric("Postados (Sucesso)", f"{concluidos}", delta="Missão Cumprida")
+    m4.metric("Total de Demandas", f"{total_pedidos}")
+    
+    st.divider()
+    
+    # ABAS DE NAVEGAÇÃO DO MARKETING
+    t_nova_tarefa, t_kanban, t_calendario, t_auditoria = st.tabs(["➕ Nova Demanda", "📋 Quadro de Produção", "📅 Agenda", "✅ Vitrine & Auditoria"])
+    
+    # ==========================================
+    # ABA 1: NOVA DEMANDA (ONDE A BIA PEDE)
+    # ==========================================
+    with t_nova_tarefa:
+        st.write("#### 💡 O que precisamos criar hoje?")
+        with st.form("form_novo_marketing", clear_on_submit=True):
+            c1, c2 = st.columns([2, 1])
+            
+            # O Pulo do Gato: Puxar os produtos reais do sistema
+            opcoes_produtos = ["Nenhum / Post Institucional"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
+            f_produto = c1.selectbox("Sobre qual produto é o post?", opcoes_produtos)
+            
+            f_formato = c2.selectbox("Formato desejado", ["📸 Foto para o Feed", "🎬 Reels", "📱 Story", "🛒 Atualizar no Site (Odoo)", "🎨 Outro (Banner, Logo...)"])
+            
+            f_desc = st.text_area("Descrição / Ideia", placeholder="Ex: Fazer um vídeo mostrando a elasticidade do tecido do lençol. Usar música em alta.")
+            
+            c3, c4 = st.columns(2)
+            f_data_agendada = c3.date_input("Para quando precisamos disto? (Prazo/Data do Post)")
+            f_status_inicial = c4.selectbox("Status Atual", ["📥 Fila (Aguardando Início)", "✍️ Em Produção"])
+            
+            if st.form_submit_button("🚀 Lançar Desafio para a Equipa!", type="primary"):
+                if f_desc:
+                    with st.spinner("A registar demanda..."):
+                        try:
+                            import datetime as dt
+                            import pytz
+                            aba_mkt = planilha_mestre.worksheet("MARKETING")
+                            
+                            # Gerador Inteligente de ID (Ex: MKT-001)
+                            if df_mkt.empty:
+                                novo_id = "MKT-001"
+                            else:
+                                ultimo_id = df_mkt['ID_TAREFA'].iloc[-1]
+                                try:
+                                    num = int(ultimo_id.split("-")[1]) + 1
+                                    novo_id = f"MKT-{num:03d}"
+                                except:
+                                    novo_id = f"MKT-{len(df_mkt)+1:03d}"
+                            
+                            data_hoje = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                            data_prazo_str = f_data_agendada.strftime("%d/%m/%Y")
+                            
+                            # A ordem exata da sua planilha (A até I)
+                            linha_mkt = [
+                                novo_id,               # A: ID_TAREFA
+                                data_hoje,             # B: DATA_PEDIDO
+                                f_produto,             # C: PRODUTO_VINCULADO
+                                f_formato,             # D: FORMATO
+                                f_desc,                # E: DESCRIÇÃO
+                                data_prazo_str,        # F: DATA_AGENDADA
+                                f_status_inicial,      # G: STATUS
+                                "-",                   # H: LINK_ARTE (Vazio no início)
+                                "-"                    # I: DATA_CONCLUSAO (Vazio no início)
+                            ]
+                            
+                            aba_mkt.append_row(linha_mkt, value_input_option='RAW')
+                            st.success(f"✅ Tarefa {novo_id} registada com sucesso! O Gestor de Marketing já foi notificado (virtualmente)!")
+                            st.cache_data.clear()
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao registar: {e}")
+                else:
+                    st.warning("Por favor, preencha a descrição da ideia!")
+                    
+    with t_kanban:
+        st.write("### 📋 Quadro de Produção (Kanban)")
+        
+        if not df_mkt.empty:
+            # Criamos as 4 colunas visuais do seu fluxo de trabalho
+            col_fila, col_prod, col_postar, col_done = st.columns(4)
+            
+            # Mapeamento de Status e Cores
+            status_map = [
+                ("📥 Fila (Aguardando Início)", col_fila),
+                ("✍️ Em Produção", col_prod),
+                ("✅ Falta Postar", col_postar),
+                ("🚀 Concluído", col_done)
+            ]
+            
+            for status_nome, coluna_gui in status_map:
+                with coluna_gui:
+                    st.markdown(f"**{status_nome}**")
+                    # Filtra apenas as tarefas desse status
+                    tarefas_status = df_mkt[df_mkt['STATUS'] == status_nome]
+                    
+                    if tarefas_status.empty:
+                        st.caption("Vazio")
+                    
+                    for _, task in tarefas_status.iterrows():
+                        # Cada tarefa vira um card (expander)
+                        with st.expander(f"📍 {task['ID_TAREFA']}", expanded=True):
+                            st.write(f"**{task['FORMATO']}**")
+                            st.caption(f"📅 Prazo: {task['DATA_AGENDADA']}")
+                            st.write(f"<small>{task['DESCRIÇÃO']}</small>", unsafe_allow_html=True)
+                            
+                            # 🔄 Botão para Mover para a próxima etapa
+                            if status_nome != "🚀 Concluído":
+                                fluxo = {
+                                    "📥 Fila (Aguardando Início)": "✍️ Em Produção",
+                                    "✍️ Em Produção": "✅ Falta Postar",
+                                    "✅ Falta Postar": "🚀 Concluído"
+                                }
+                                proximo = fluxo[status_nome]
+                                
+                                if st.button(f"Mover ➡️", key=f"btn_{task['ID_TAREFA']}"):
+                                    try:
+                                        aba_mkt = planilha_mestre.worksheet("MARKETING")
+                                        # Localiza a linha correta (+2 por causa do cabeçalho e índice 0)
+                                        linha_planilha = task.name + 2 
+                                        
+                                        # Atualiza Status no Google Sheets (Coluna G)
+                                        aba_mkt.update_acell(f"G{linha_planilha}", proximo)
+                                        
+                                        # Se finalizou, carimba a data de conclusão (Coluna I)
+                                        if proximo == "🚀 Concluído":
+                                            import datetime as dt
+                                            agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
+                                            aba_mkt.update_acell(f"I{linha_planilha}", agora)
+                                            
+                                        st.toast(f"Tarefa {task['ID_TAREFA']} movida!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao mover card: {e}")
+        else:
+            st.info("Ainda não há demandas de marketing registradas.")
+
+    # ==========================================
+    # ABA 3: CALENDÁRIO / AGENDA DE POSTAGENS
+    # ==========================================
+    with t_calendario:
+        st.write("### 📅 Cronograma de Conteúdo")
+        st.write("Veja o que está programado para ir ao ar nos próximos dias.")
+        
+        if not df_mkt.empty:
+            df_agenda = df_mkt.copy()
+            # Converte a data de texto (DD/MM/YYYY) para data real do Python
+            df_agenda['DATA_DATETIME'] = pd.to_datetime(df_agenda['DATA_AGENDADA'], format='%d/%m/%Y', errors='coerce')
+            df_agenda = df_agenda.dropna(subset=['DATA_DATETIME']).sort_values('DATA_DATETIME')
+            
+            import pytz
+            from datetime import datetime
+            hoje_real = pd.to_datetime(datetime.now(pytz.timezone('America/Sao_Paulo')).strftime('%Y-%m-%d'))
+            
+            # Filtra apenas o que AINDA NÃO FOI POSTADO
+            df_agenda_pendente = df_agenda[~df_agenda['STATUS'].str.contains('Concluído', case=False, na=False)]
+            
+            # 💡 FUNÇÃO CAÇADORA DE IMAGENS: Procura a foto do produto no df_docs
+            def buscar_foto_produto(nome_produto_vinculado):
+                if not df_docs.empty and str(nome_produto_vinculado) != "Nenhum / Post Institucional":
+                    # Filtra documentos que são fotos e têm o vínculo exato com o produto
+                    fotos = df_docs[(df_docs['TIPO'] == "Foto de Produto") & (df_docs['VINCULO'] == str(nome_produto_vinculado))]
+                    if not fotos.empty:
+                        # Pega o link da foto mais recente que foi subida para esse produto
+                        return str(fotos.iloc[-1].get('LINK_DRIVE', ''))
+                return None
+
+            # 💡 FUNÇÃO DESENHISTA: Cria o card visual com ou sem foto
+            def renderizar_card_tarefa(task, titulo_tempo):
+                foto_url = buscar_foto_produto(task['PRODUTO_VINCULADO'])
+                
+                # Se achou a foto no Cloudinary, divide a tela (Foto na esquerda, texto na direita)
+                if foto_url and foto_url.startswith("http"):
+                    c_img, c_txt = st.columns([1, 4])
+                    with c_img:
+                        st.image(foto_url, use_container_width=True)
+                    with c_txt:
+                        st.markdown(f"**{titulo_tempo}** | 📍 {task['ID_TAREFA']} - {task['FORMATO']}<br>📦 **Produto:** {task['PRODUTO_VINCULADO']}<br><small>*{task['DESCRIÇÃO']}*</small><br>Status: **{task['STATUS']}**", unsafe_allow_html=True)
+                else:
+                    # Se não tem foto (ou é post institucional), desenha normal
+                    st.markdown(f"**{titulo_tempo}** | 📍 {task['ID_TAREFA']} - {task['FORMATO']}<br>📦 **Produto:** {task['PRODUTO_VINCULADO']}<br><small>*{task['DESCRIÇÃO']}*</small><br>Status: **{task['STATUS']}**", unsafe_allow_html=True)
+                
+                st.divider()
+
+            if not df_agenda_pendente.empty:
+                atrasados = df_agenda_pendente[df_agenda_pendente['DATA_DATETIME'] < hoje_real]
+                hoje = df_agenda_pendente[df_agenda_pendente['DATA_DATETIME'] == hoje_real]
+                futuro = df_agenda_pendente[df_agenda_pendente['DATA_DATETIME'] > hoje_real]
+                
+                # 🔴 ATRASADOS
+                if not atrasados.empty:
+                    st.error("#### 🔴 Prazos Estourados (Atrasados)")
+                    for _, task in atrasados.iterrows():
+                        renderizar_card_tarefa(task, task['DATA_AGENDADA'])
+                
+                # 🟢 HOJE
+                if not hoje.empty:
+                    st.success("#### 🟢 Vai para o ar HOJE!")
+                    for _, task in hoje.iterrows():
+                        renderizar_card_tarefa(task, "HOJE")
+                
+                # 🔵 PRÓXIMOS DIAS
+                if not futuro.empty:
+                    st.info("#### 🔵 Próximos Dias")
+                    for _, task in futuro.iterrows():
+                        dias_faltam = (task['DATA_DATETIME'] - hoje_real).days
+                        texto_dias = "Amanhã" if dias_faltam == 1 else f"Daqui a {dias_faltam} dias"
+                        renderizar_card_tarefa(task, f"{task['DATA_AGENDADA']} ({texto_dias})")
+            else:
+                st.success("🎉 Nenhuma postagem pendente! A agenda está livre.")
+        else:
+            st.info("Nenhuma demanda cadastrada no sistema.")
+
     # ==========================================
     # ABA 4: VITRINE E AUDITORIA (LINKAR O INSTAGRAM)
     # ==========================================
@@ -2844,8 +3085,8 @@ elif menu_selecionado == "🏭 Compras e Despesas":
                 )
             else:
                 st.info("O histórico de postagens aparecerá aqui assim que o primeiro link for salvo.")
-
         
+
 
 
 
