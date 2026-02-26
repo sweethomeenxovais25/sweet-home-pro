@@ -890,7 +890,7 @@ elif menu_selecionado == "💰 Financeiro":
             c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", delta=f"{(saldo_devedor/vendas_brutas*100):.1f}% pendente" if vendas_brutas > 0 else "0%", delta_color="inverse", help="Montante que está 'na rua', aguardando o pagamento das faturas em aberto pelas clientes.")
             
             # 💡 LINHA DO "PENTE FINO" NA TELA (Isso vai tranquilizar você e a Bia)
-            st.caption(f"🕵️‍♂️ **Raio-X do Filtro:** A planilha bruta possui **R$ {saldo_total_planilha:,.2f}** de dívida total. O sistema isolou **R$ {saldo_socia:,.2f}** (retiradas da sócia) para o *Banco Sweet* e exibe nas métricas acima apenas a dívida real de clientes (**R$ {saldo_devedor:,.2f}**).") help="Montante que está 'na rua', aguardando o pagamento das faturas em aberto pelas clientes.")
+            st.caption(f"🕵️‍♂️ **Raio-X do Filtro:** A planilha bruta possui **R$ {saldo_total_planilha:,.2f}** de dívida total. O sistema isolou **R$ {saldo_socia:,.2f}** (retiradas da sócia) para o *Banco Sweet* e exibe nas métricas acima apenas a dívida real de clientes (**R$ {saldo_devedor:,.2f}**).")
 
             # 3. TERMÔMETRO DE SAÚDE FINANCEIRA
             st.markdown("---")
@@ -2306,6 +2306,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
