@@ -811,44 +811,76 @@ elif menu_selecionado == "💰 Financeiro":
     st.markdown("### 📈 Resumo Geral Sweet Home")
     if not df_vendas_hist.empty:
         try:
-            # 1. PROCESSAMENTO SEGURO POR POSIÇÃO (ILOC)
+            # 1. PROCESSAMENTO SEGURO
             df_fin_total = df_vendas_hist.copy()
             
             # ========================================================
-            # 🛑 O FILTRO DE GOVERNANÇA (SEPARAÇÃO SÓCIOS vs CLIENTES)
+            # 🛑 O FILTRO DE GOVERNANÇA DINÂMICO (CORREÇÃO DE MATCH PARCIAL)
             # ========================================================
             try:
+                # 1. Puxa todos os nomes da aba SOCIOS, convertendo para minúsculo e sem espaços
                 if not df_socios.empty:
-                    nomes_socios = df_socios['NOME'].astype(str).str.strip().tolist()
+                    nomes_socios_limpos = df_socios['NOME'].astype(str).str.strip().str.lower().tolist()
                 else:
-                    nomes_socios = ["Beatriz Anselmo"] # Fallback de segurança se a aba estiver vazia
+                    nomes_socios_limpos = []
             except:
-                nomes_socios = ["Beatriz Anselmo"]
+                nomes_socios_limpos = []
+
+            # 2. Puxa do Banco de Clientes (CRM) os Códigos (CLI-XXX) que pertencem a esses sócios
+            codigos_dos_socios = []
+            if nomes_socios_limpos:
+                for cod, dados in banco_de_clientes.items():
+                    if str(dados['nome']).strip().lower() in nomes_socios_limpos:
+                        codigos_dos_socios.append(str(cod).strip().lower())
+
+            # 3. Limpa as colunas de Vendas pelo NOME DA COLUNA
+            col_cliente = 'CLIENTE' if 'CLIENTE' in df_fin_total.columns else df_fin_total.columns[3]
+            nomes_vendas = df_fin_total[col_cliente].astype(str).str.strip().str.lower()
             
-            # Cria a máscara: É sócio? (Verifica se o nome na Coluna D (3) está na lista de sócios)
-            mascara_socios = df_fin_total.iloc[:, 3].astype(str).str.strip().isin(nomes_socios)
-            
-            # df_fin = VENDAS REAIS (Exclui os sócios)
+            if 'CÓD. CLIENTE' in df_fin_total.columns:
+                codigos_vendas = df_fin_total['CÓD. CLIENTE'].astype(str).str.split('.').str[0].str.strip().str.lower()
+            else:
+                codigos_vendas = df_fin_total.iloc[:, 2].astype(str).str.split('.').str[0].str.strip().str.lower()
+
+            # 4. A MÁSCARA INTELIGENTE (O CORAÇÃO DO AJUSTE): 
+            # Em vez de exigir nome 100% igual, checa se o nome da Bia está *dentro* do texto da venda!
+            def checar_socio(nome_venda):
+                for socio in nomes_socios_limpos:
+                    if socio != "" and socio in nome_venda:
+                        return True
+                return False
+                
+            mascara_nomes = nomes_vendas.apply(checar_socio)
+            mascara_socios = mascara_nomes | codigos_vendas.isin(codigos_dos_socios)
+
+            # df_fin = VENDAS REAIS (Exclui os sócios para os Gráficos e Saldo Geral)
             df_fin = df_fin_total[~mascara_socios].copy()
-            
-            # df_retiradas = PRODUTOS RETIRADOS PELOS SÓCIOS
+
+            # df_retiradas = PRODUTOS RETIRADOS (Vai direto para o Banco Sweet, agora com os R$ 3.197,38 integrais)
             df_retiradas = df_fin_total[mascara_socios].copy()
             # ========================================================
             
             if not df_fin.empty:
-                # Mapeamento: Coluna L (11)=Total | M (12)=Lucro | O (14)=Pagto | U (20)=Saldo
-                df_fin['VALOR_NUM'] = df_fin.iloc[:, 11].apply(limpar_v)
-                df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v)
-                df_fin['FORMA_PG'] = df_fin.iloc[:, 14]
-                df_fin['SALDO_NUM'] = df_fin.iloc[:, 20].apply(limpar_v)
+                # 💡 A MÁGICA DOS VALORES: Busca a coluna com get() para não errar a posição e perder o cálculo
+                df_fin['VALOR_NUM'] = df_fin.get('TOTAL R$', df_fin.iloc[:, 11]).apply(limpar_v)
+                df_fin['FORMA_PG'] = df_fin.get('FORMA DE PAGAMENTO', df_fin.iloc[:, 14])
+                df_fin['SALDO_NUM'] = df_fin.get('SALDO DEVEDOR', df_fin.iloc[:, 20]).apply(limpar_v)
+                
+                # Para o lucro, vamos garantir que ele ache a coluna certa também
+                if 'LUCRO' in df_fin.columns:
+                    df_fin['LUCRO_NUM'] = df_fin['LUCRO'].apply(limpar_v)
+                elif 'LUCRO R$' in df_fin.columns:
+                    df_fin['LUCRO_NUM'] = df_fin['LUCRO R$'].apply(limpar_v)
+                else:
+                    df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v) # Fallback
                 
                 vendas_brutas = df_fin['VALOR_NUM'].sum()
                 lucro_bruto = df_fin['LUCRO_NUM'].sum()
                 saldo_devedor = df_fin['SALDO_NUM'].sum()
                 total_recebido = vendas_brutas - saldo_devedor
                 
-                # Cálculo de Liquidez (O que já é dinheiro vivo vs. o que é Flex)
-                receita_imediata = df_fin[df_fin['FORMA_PG'] != 'Sweet Flex']['VALOR_NUM'].sum()
+                # Cálculo de Liquidez (Garante que letras maiusculas no flex não enganem o caixa)
+                receita_imediata = df_fin[~df_fin['FORMA_PG'].astype(str).str.upper().str.contains('FLEX')]['VALOR_NUM'].sum()
                 indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
             else:
                 vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = 0.0
@@ -1057,7 +1089,8 @@ elif menu_selecionado == "💰 Financeiro":
                 DATA_CORTE_LEGADO = pd.to_datetime("2026-02-01")
                 
                 # --- 1. HIGIENIZAÇÃO DE DADOS ---
-                df_cobranca = df_vendas_hist.copy()
+                # A MÁGICA AQUI: Puxa o df_fin (sem sócios) no lugar do histórico bruto
+                df_cobranca = df_fin.copy()
                 df_cobranca['SALDO_NUM'] = df_cobranca['SALDO DEVEDOR'].apply(limpar_v)
                 
                 # 🛑 Trava de Status para não cobrar quem já pagou
@@ -2273,6 +2306,11 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
+
+
+
+
 
 
 
