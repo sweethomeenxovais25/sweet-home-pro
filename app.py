@@ -261,6 +261,7 @@ def carregar_dados():
     
     def ler_aba_seguro(nome):
         try:
+            # 💡 CORREÇÃO 2: A variável certa é 'nome' e não 'nome_aba'
             aba = planilha_mestre.worksheet(nome)
             dados = aba.get_all_values()
             if len(dados) <= 1: return pd.DataFrame()
@@ -269,7 +270,9 @@ def carregar_dados():
                 df = df[~df.iloc[:, 0].astype(str).str.contains("TOTAIS", case=False, na=False)]
                 df = df[df.iloc[:, 1].astype(str).str.strip() != ""]
             return df
-        except: return pd.DataFrame()
+        except Exception as e: 
+            print(f"Erro ao ler {nome}: {e}") # Isso ajuda a avisar se a aba não existir
+            return pd.DataFrame()
 
     df_inv = ler_aba_seguro("INVENTÁRIO")
     df_cli = ler_aba_seguro("CARTEIRA DE CLIENTES")
@@ -277,22 +280,24 @@ def carregar_dados():
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
     
-    # 💡 AQUI ESTÁ O SEGREDO: Puxando as novas abas
+    # NOVAS ABAS CORPORATIVAS
     df_socios = ler_aba_seguro("SOCIOS")
     df_aportes = ler_aba_seguro("APORTES")
     df_fornecedores = ler_aba_seguro("FORNECEDORES")
     df_despesas = ler_aba_seguro("DESPESAS")
     df_docs = ler_aba_seguro("DOCUMENTOS")
+    df_marketing = ler_aba_seguro("MARKETING")
 
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
     banco_forn = {str(r.iloc[0]): {"nome": str(r.iloc[1])} for _, r in df_fornecedores.iterrows()} if not df_fornecedores.empty else {}
 
-    # 💡 AJUSTE 2: O return TEM que devolver as duas abas novas no final
-    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas
+    # Retornando TUDO
+    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas, df_marketing
 
 # Variáveis que recebem os dados (Atualizado)
 banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes, df_docs, banco_de_fornecedores, df_fornecedores, df_despesas, df_marketing = carregar_dados()
+
 with st.sidebar:
     try:
         st.image("logo_sweet.png", use_container_width=True)
@@ -2841,6 +2846,7 @@ elif menu_selecionado == "🏭 Compras e Despesas":
                 st.info("O histórico de postagens aparecerá aqui assim que o primeiro link for salvo.")
 
         
+
 
 
 
