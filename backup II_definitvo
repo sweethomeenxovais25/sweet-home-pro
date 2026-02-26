@@ -254,13 +254,15 @@ def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
         st.error(f"Erro no servidor de arquivos: {e}")
         return None, None
 
-@st.cache_data(ttl=60) # Reduzir para 60 ajuda a manter o estoque mais fresco
+@st.cache_data(ttl=60)
 def carregar_dados():
+    # 💡 CORREÇÃO 1: Se falhar, agora ele retorna as 14 variáveis certinhas para não quebrar o app
     if not planilha_mestre: 
-        return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
     def ler_aba_seguro(nome):
         try:
+            # 💡 CORREÇÃO 2: A variável certa é 'nome' e não 'nome_aba'
             aba = planilha_mestre.worksheet(nome)
             dados = aba.get_all_values()
             if len(dados) <= 1: return pd.DataFrame()
@@ -269,20 +271,33 @@ def carregar_dados():
                 df = df[~df.iloc[:, 0].astype(str).str.contains("TOTAIS", case=False, na=False)]
                 df = df[df.iloc[:, 1].astype(str).str.strip() != ""]
             return df
-        except: return pd.DataFrame()
+        except Exception as e: 
+            print(f"Erro ao ler {nome}: {e}") # Isso ajuda a avisar se a aba não existir
+            return pd.DataFrame()
 
     df_inv = ler_aba_seguro("INVENTÁRIO")
     df_cli = ler_aba_seguro("CARTEIRA DE CLIENTES")
     df_fin = ler_aba_seguro("FINANCEIRO")
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
+    
+    # NOVAS ABAS CORPORATIVAS
+    df_socios = ler_aba_seguro("SOCIOS")
+    df_aportes = ler_aba_seguro("APORTES")
+    df_fornecedores = ler_aba_seguro("FORNECEDORES")
+    df_despesas = ler_aba_seguro("DESPESAS")
+    df_docs = ler_aba_seguro("DOCUMENTOS")
+    df_marketing = ler_aba_seguro("MARKETING")
 
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
+    banco_forn = {str(r.iloc[0]): {"nome": str(r.iloc[1])} for _, r in df_fornecedores.iterrows()} if not df_fornecedores.empty else {}
 
-    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli
+    # Retornando TUDO
+    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas, df_marketing
 
-banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full = carregar_dados()
+# Variáveis que recebem os dados (Atualizado)
+banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes, df_docs, banco_de_fornecedores, df_fornecedores, df_despesas, df_marketing = carregar_dados()
 
 with st.sidebar:
     try:
@@ -301,7 +316,7 @@ with st.sidebar:
     
     menu_selecionado = st.radio(
         "Navegação",
-        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos"], 
+        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos", "🏭 Compras e Despesas", "📢 Gestão de Marketing"], 
         key="navegacao_principal_sweet"
     )
     
@@ -486,6 +501,8 @@ if menu_selecionado == "🛒 Vendas":
             st.markdown("#### 🛒 Itens Selecionados")
             df_car = pd.DataFrame(st.session_state['carrinho'])
             st.dataframe(df_car[['nome', 'qtd', 'preco', 'subtotal']], use_container_width=True, hide_index=True)
+
+            # (restante do seu código continua igual...)
             
             subtotal_venda = df_car['subtotal'].sum()
             
@@ -806,30 +823,106 @@ elif menu_selecionado == "💰 Financeiro":
     st.markdown("### 📈 Resumo Geral Sweet Home")
     if not df_vendas_hist.empty:
         try:
-            # 1. PROCESSAMENTO SEGURO POR POSIÇÃO (ILOC)
-            df_fin = df_vendas_hist.copy()
+            # 1. PROCESSAMENTO SEGURO
+            df_fin_total = df_vendas_hist.copy()
             
-            # Mapeamento: Coluna L (11)=Total | M (12)=Lucro | O (14)=Pagto | U (20)=Saldo
-            df_fin['VALOR_NUM'] = df_fin.iloc[:, 11].apply(limpar_v)
-            df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v)
-            df_fin['FORMA_PG'] = df_fin.iloc[:, 14]
-            df_fin['SALDO_NUM'] = df_fin.iloc[:, 20].apply(limpar_v)
+            # ========================================================
+            # 🛑 O FILTRO DE GOVERNANÇA DINÂMICO (CORREÇÃO DE MATCH PARCIAL)
+            # ========================================================
+            try:
+                # 1. Puxa todos os nomes da aba SOCIOS, convertendo para minúsculo e sem espaços
+                if not df_socios.empty:
+                    nomes_socios_limpos = df_socios['NOME'].astype(str).str.strip().str.lower().tolist()
+                else:
+                    nomes_socios_limpos = []
+            except:
+                nomes_socios_limpos = []
+
+            # 2. Puxa do Banco de Clientes (CRM) os Códigos (CLI-XXX) que pertencem a esses sócios
+            codigos_dos_socios = []
+            if nomes_socios_limpos:
+                for cod, dados in banco_de_clientes.items():
+                    if str(dados['nome']).strip().lower() in nomes_socios_limpos:
+                        codigos_dos_socios.append(str(cod).strip().lower())
+
+            # 3. Limpa as colunas de Vendas pelo NOME DA COLUNA
+            col_cliente = 'CLIENTE' if 'CLIENTE' in df_fin_total.columns else df_fin_total.columns[3]
+            nomes_vendas = df_fin_total[col_cliente].astype(str).str.strip().str.lower()
             
-            vendas_brutas = df_fin['VALOR_NUM'].sum()
-            lucro_bruto = df_fin['LUCRO_NUM'].sum()
-            saldo_devedor = df_fin['SALDO_NUM'].sum()
-            total_recebido = vendas_brutas - saldo_devedor
+            if 'CÓD. CLIENTE' in df_fin_total.columns:
+                codigos_vendas = df_fin_total['CÓD. CLIENTE'].astype(str).str.split('.').str[0].str.strip().str.lower()
+            else:
+                codigos_vendas = df_fin_total.iloc[:, 2].astype(str).str.split('.').str[0].str.strip().str.lower()
+
+            # 4. A MÁSCARA INTELIGENTE (O CORAÇÃO DO AJUSTE): 
+            # Em vez de exigir nome 100% igual, checa se o nome da Bia está *dentro* do texto da venda!
+            def checar_socio(nome_venda):
+                for socio in nomes_socios_limpos:
+                    if socio != "" and socio in nome_venda:
+                        return True
+                return False
+                
+            mascara_nomes = nomes_vendas.apply(checar_socio)
+            mascara_socios = mascara_nomes | codigos_vendas.isin(codigos_dos_socios)
+
+            # df_fin = VENDAS REAIS (Exclui os sócios para os Gráficos e Saldo Geral)
+            df_fin = df_fin_total[~mascara_socios].copy()
+
+            # df_retiradas = PRODUTOS RETIRADOS (Vai direto para o Banco Sweet, agora com os R$ 3.197,38 integrais)
+            df_retiradas = df_fin_total[mascara_socios].copy()
+            # ========================================================
             
-            # Cálculo de Liquidez (O que já é dinheiro vivo vs. o que é Flex)
-            receita_imediata = df_fin[df_fin['FORMA_PG'] != 'Sweet Flex']['VALOR_NUM'].sum()
-            indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
+            if not df_fin.empty:
+                # 💡 A MÁGICA DOS VALORES: Busca a coluna com get() para não errar a posição e perder o cálculo
+                df_fin['VALOR_NUM'] = df_fin.get('TOTAL R$', df_fin.iloc[:, 11]).apply(limpar_v)
+                df_fin['FORMA_PG'] = df_fin.get('FORMA DE PAGAMENTO', df_fin.iloc[:, 14])
+                df_fin['SALDO_NUM'] = df_fin.get('SALDO DEVEDOR', df_fin.iloc[:, 20]).apply(limpar_v)
+                
+                # Para o lucro, vamos garantir que ele ache a coluna certa também
+                if 'LUCRO' in df_fin.columns:
+                    df_fin['LUCRO_NUM'] = df_fin['LUCRO'].apply(limpar_v)
+                elif 'LUCRO R$' in df_fin.columns:
+                    df_fin['LUCRO_NUM'] = df_fin['LUCRO R$'].apply(limpar_v)
+                else:
+                    df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v) # Fallback
+                
+                vendas_brutas = df_fin['VALOR_NUM'].sum()
+                lucro_bruto = df_fin['LUCRO_NUM'].sum()
+                saldo_devedor = df_fin['SALDO_NUM'].sum()
+                total_recebido = vendas_brutas - saldo_devedor
+                
+                # Cálculo de Liquidez
+                receita_imediata = df_fin[~df_fin['FORMA_PG'].astype(str).str.upper().str.contains('FLEX')]['VALOR_NUM'].sum()
+                indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
+                
+                # ========================================================
+                # 🆕 INTEGRAÇÃO ERP: Calculando as saídas reais para o Lucro Líquido (DRE)
+                # ========================================================
+                if not df_despesas.empty:
+                    # Busca segura das colunas da aba de Despesas
+                    col_status_d = 'STATUS' if 'STATUS' in df_despesas.columns else df_despesas.columns[5]
+                    col_valor_d = 'VALOR R$' if 'VALOR R$' in df_despesas.columns else df_despesas.columns[4]
+                    
+                    # Filtra apenas o que já saiu do caixa de verdade (PAGO)
+                    df_desp_pagas = df_despesas[df_despesas[col_status_d].astype(str).str.strip().str.upper() == 'PAGO'].copy()
+                    total_despesas_pagas = df_desp_pagas[col_valor_d].apply(limpar_v).sum() if not df_desp_pagas.empty else 0.0
+                else:
+                    total_despesas_pagas = 0.0
+                
+                # A mágica final: Lucro Bruto menos as Despesas Fixas/Operacionais
+                lucro_liquido = lucro_bruto - total_despesas_pagas
+                # ========================================================
+
+            else:
+                vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = total_despesas_pagas = lucro_liquido = 0.0
             
-            # 2. MÉTRICAS PRINCIPAIS
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}")
-            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}")
+            # 2. MÉTRICAS PRINCIPAIS (AGORA SÃO 5 COLUNAS COM DRE INTEGRADO)
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}", help="Soma de todas as vendas reais registradas para clientes.")
+            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}", help="Valor Total cobrado menos o Custo de Fábrica dos produtos.")
             c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro em Caixa")
-            c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", delta=f"{(saldo_devedor/vendas_brutas*100):.1f}% pendente", delta_color="inverse")
+            c4.metric("Saídas (Despesas)", f"R$ {total_despesas_pagas:,.2f}", delta="Contas Pagas", delta_color="inverse", help="Total de despesas, insumos e contas fixas já quitadas no módulo de Compras.")
+            c5.metric("Lucro Líquido", f"R$ {lucro_liquido:,.2f}", delta="Resultado Real", help="O que sobrou de fato para a empresa: Lucro Bruto menos as Saídas (Despesas).")
 
             # 3. TERMÔMETRO DE SAÚDE FINANCEIRA
             st.markdown("---")
@@ -846,11 +939,11 @@ elif menu_selecionado == "💰 Financeiro":
                     cor_barra = "#ff4b4b" # Vermelho
                     st.error(f"🔴 **Saúde de Caixa: CRÍTICA** (Apenas {indice_liquidez:.1f}% à vista)")
                 
-                # --- Barra de Progresso Customizada (Acompanha a cor) ---
+                # --- Barra de Progresso Customizada (Acompanha a cor e ganhou Tooltip HTML) ---
                 progresso = min(indice_liquidez/100, 1.0)
                 st.markdown(
                     f"""
-                    <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 10px;">
+                    <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 10px;" title="Porcentagem do Faturamento que já é dinheiro vivo no caixa.">
                         <div style="width: {progresso*100}%; background-color: {cor_barra}; height: 10px; border-radius: 10px;">
                         </div>
                     </div>
@@ -859,55 +952,58 @@ elif menu_selecionado == "💰 Financeiro":
                 )
             
             with col_t2:
-                st.metric("Recebíveis (Futuro)", f"R$ {saldo_devedor:,.2f}", help="Dinheiro que entrará via Sweet Flex.")
+                st.metric("Recebíveis (Futuro)", f"R$ {saldo_devedor:,.2f}", help="Dinheiro que entrará via faturas do Sweet Flex no futuro. É o reflexo do Saldo Devedor visto como promessa de recebimento.")
 
             # 4. DASHBOARD DE ANÁLISE (VERSÃO PREMIUM COM CORES DA MARCA)
             with st.expander("📊 Análise de Desempenho e Tendências", expanded=False):
-                t_faturamento, t_pagamentos, t_ticket = st.tabs(["📈 Faturamento", "💳 Meios de Pagamento", "🎟️ Ticket Médio"])
-                
-                import plotly.express as px
-                paleta_sweet = ['#31241b', '#8d5524', '#d4a373', '#f6debc'] # Marrons e Beges da marca
+                if not df_fin.empty:
+                    t_faturamento, t_pagamentos, t_ticket = st.tabs(["📈 Faturamento", "💳 Meios de Pagamento", "🎟️ Ticket Médio"])
+                    
+                    import plotly.express as px
+                    paleta_sweet = ['#31241b', '#8d5524', '#d4a373', '#f6debc'] # Marrons e Beges da marca
 
-                with t_faturamento:
-                    st.write("#### Evolução de Vendas no Tempo")
-                    df_fin['DATA_DT'] = pd.to_datetime(df_fin['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
-                    vendas_dia = df_fin.groupby('DATA_DT')['VALOR_NUM'].sum().reset_index()
+                    with t_faturamento:
+                        st.write("#### Evolução de Vendas no Tempo")
+                        df_fin['DATA_DT'] = pd.to_datetime(df_fin['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
+                        vendas_dia = df_fin.groupby('DATA_DT')['VALOR_NUM'].sum().reset_index()
+                        
+                        # Gráfico de Área com Formatação de R$ no hover
+                        fig_fat = px.area(vendas_dia, x='DATA_DT', y='VALOR_NUM',
+                                         labels={'VALOR_NUM': 'Total Vendido', 'DATA_DT': 'Data'},
+                                         color_discrete_sequence=[paleta_sweet[0]])
+                        fig_fat.update_traces(hovertemplate='<b>Data:</b> %{x}<br><b>Vendido:</b> R$ %{y:,.2f}')
+                        fig_fat.update_layout(xaxis_title=None, yaxis_title="Total (R$)", margin=dict(t=10, b=10, l=0, r=0))
+                        st.plotly_chart(fig_fat, use_container_width=True)
                     
-                    # Gráfico de Área com Formatação de R$ no hover
-                    fig_fat = px.area(vendas_dia, x='DATA_DT', y='VALOR_NUM',
-                                     labels={'VALOR_NUM': 'Total Vendido', 'DATA_DT': 'Data'},
-                                     color_discrete_sequence=[paleta_sweet[0]])
-                    fig_fat.update_traces(hovertemplate='<b>Data:</b> %{x}<br><b>Vendido:</b> R$ %{y:,.2f}')
-                    fig_fat.update_layout(xaxis_title=None, yaxis_title="Total (R$)", margin=dict(t=10, b=10, l=0, r=0))
-                    st.plotly_chart(fig_fat, use_container_width=True)
-                
-                with t_pagamentos:
-                    st.write("#### Composição dos Recebimentos")
-                    vendas_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].sum().reset_index()
-                    fig_pie = px.pie(vendas_meio, values='VALOR_NUM', names='FORMA_PG', 
-                                    color_discrete_sequence=paleta_sweet,
-                                    hole=.4)
-                    fig_pie.update_traces(textposition='inside', textinfo='percent+label', 
-                                         hovertemplate='<b>%{label}</b><br>Total: R$ %{value:,.2f}')
-                    fig_pie.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    with t_pagamentos:
+                        st.write("#### Composição dos Recebimentos")
+                        vendas_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].sum().reset_index()
+                        fig_pie = px.pie(vendas_meio, values='VALOR_NUM', names='FORMA_PG', 
+                                        color_discrete_sequence=paleta_sweet,
+                                        hole=.4)
+                        fig_pie.update_traces(textposition='inside', textinfo='percent+label', 
+                                             hovertemplate='<b>%{label}</b><br>Total: R$ %{value:,.2f}')
+                        fig_pie.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
+                        st.plotly_chart(fig_pie, use_container_width=True)
 
-                with t_ticket:
-                    st.write("#### Valor Médio por Venda (Ticket Médio)")
-                    # Arredondando para 2 casas decimais para evitar o erro visual
-                    ticket_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].mean().round(2).reset_index()
-                    
-                    fig_ticket = px.bar(ticket_meio, x='FORMA_PG', y='VALOR_NUM',
-                                       text='VALOR_NUM',
-                                       labels={'VALOR_NUM': 'Ticket Médio (R$)', 'FORMA_PG': 'Meio de Pagto'},
-                                       color='FORMA_PG',
-                                       color_discrete_sequence=paleta_sweet)
-                    
-                    fig_ticket.update_traces(texttemplate='R$ %{text:.2f}', textposition='outside',
-                                            hovertemplate='<b>%{x}</b><br>Média: R$ %{y:,.2f}')
-                    fig_ticket.update_layout(showlegend=False, yaxis_title="Valor (R$)", xaxis_title=None)
-                    st.plotly_chart(fig_ticket, use_container_width=True)
-                    st.caption("💡 O Ticket Médio ajuda a entender qual cliente gasta mais em cada modalidade.")
+                    with t_ticket:
+                        st.write("#### Valor Médio por Venda (Ticket Médio)")
+                        # Arredondando para 2 casas decimais para evitar o erro visual
+                        ticket_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].mean().round(2).reset_index()
+                        
+                        fig_ticket = px.bar(ticket_meio, x='FORMA_PG', y='VALOR_NUM',
+                                           text='VALOR_NUM',
+                                           labels={'VALOR_NUM': 'Ticket Médio (R$)', 'FORMA_PG': 'Meio de Pagto'},
+                                           color='FORMA_PG',
+                                           color_discrete_sequence=paleta_sweet)
+                        
+                        fig_ticket.update_traces(texttemplate='R$ %{text:.2f}', textposition='outside',
+                                                hovertemplate='<b>%{x}</b><br>Média: R$ %{y:,.2f}')
+                        fig_ticket.update_layout(showlegend=False, yaxis_title="Valor (R$)", xaxis_title=None)
+                        st.plotly_chart(fig_ticket, use_container_width=True)
+                        st.caption("💡 O Ticket Médio ajuda a entender qual cliente gasta mais em cada modalidade.")
+                else:
+                    st.info("Aguardando vendas de clientes reais para gerar os gráficos.")
 
         except Exception as e:
             st.error(f"⚠️ Erro ao processar o painel: {e}")
@@ -1025,7 +1121,8 @@ elif menu_selecionado == "💰 Financeiro":
                 DATA_CORTE_LEGADO = pd.to_datetime("2026-02-01")
                 
                 # --- 1. HIGIENIZAÇÃO DE DADOS ---
-                df_cobranca = df_vendas_hist.copy()
+                # A MÁGICA AQUI: Puxa o df_fin (sem sócios) no lugar do histórico bruto
+                df_cobranca = df_fin.copy()
                 df_cobranca['SALDO_NUM'] = df_cobranca['SALDO DEVEDOR'].apply(limpar_v)
                 
                 # 🛑 Trava de Status para não cobrar quem já pagou
@@ -1267,6 +1364,214 @@ elif menu_selecionado == "💰 Financeiro":
                 
         except Exception as e:
             st.error(f"⚠️ Erro no núcleo de processamento gerencial: {e}")
+
+    # ====================================================
+    # 🏦 BANCO SWEET & GOVERNANÇA CORPORATIVA (NOVO)
+    # ====================================================
+    st.markdown("---")
+    with st.expander("🏦 Banco Sweet (Equity, Aportes e Retiradas)", expanded=False):
+        st.write("Módulo de gestão de sócios, injeção de capital e monitoramento de retiradas (Marketing/Uso Pessoal).")
+        
+        # --- 0. MINI DASHBOARD DO BANCO (RESUMO RÁPIDO) ---
+        try:
+            # Processa Aportes (Entradas)
+            if not df_aportes.empty:
+                df_aportes['VALOR_NUM'] = df_aportes['VALOR_R$'].apply(limpar_v)
+                aporte_total_empresa = df_aportes['VALOR_NUM'].sum()
+            else:
+                aporte_total_empresa = 0.0
+
+            # Processa Retiradas (Saídas) focando na Coluna L = TOTAL R$ e Coluna H = QUANTIDADE
+            if not df_retiradas.empty:
+                # Puxa a Coluna L (Índice 11) para somar os valores financeiros
+                df_retiradas['RETIRADA_NUM'] = df_retiradas.iloc[:, 11].apply(limpar_v)
+                
+                # Puxa a Coluna H (Índice 7) para somar as peças físicas reais
+                df_retiradas['QTD_PECAS'] = pd.to_numeric(df_retiradas.iloc[:, 7], errors='coerce').fillna(0)
+                
+                total_retirado_global = df_retiradas['RETIRADA_NUM'].sum()
+                qtd_total_pecas = int(df_retiradas['QTD_PECAS'].sum())
+            else:
+                total_retirado_global = 0.0
+                qtd_total_pecas = 0
+
+            # Saldo do Banco (Injeções - Retiradas)
+            saldo_banco_sweet = aporte_total_empresa - total_retirado_global
+            
+            b1, b2, b3 = st.columns(3)
+            b1.metric("📥 Capital Injetado", f"R$ {aporte_total_empresa:,.2f}", help="Soma de todo o dinheiro vivo (aportes) colocado na empresa pelos sócios.")
+            
+            # 💡 AQUI ESTÁ A MÁGICA: O delta agora mostra a quantidade exata de itens retirados
+            b2.metric("📤 Estoque Retirado", f"R$ {total_retirado_global:,.2f}", delta=f"{qtd_total_pecas} itens físicos", delta_color="inverse", help="Valor financeiro total consumido em produtos (respeitando descontos) e a quantidade exata de peças físicas retiradas da loja.")
+            
+            if saldo_banco_sweet >= 0:
+                b3.metric("💼 Balanço Corporativo", f"R$ {saldo_banco_sweet:,.2f}", delta="Superávit", help="Calculado: Capital Injetado menos Estoque Retirado. Se verde, a empresa tem caixa positivo frente às retiradas.")
+            else:
+                b3.metric("💼 Balanço Corporativo", f"R$ {saldo_banco_sweet:,.2f}", delta="Déficit", delta_color="inverse", help="Atenção: O valor dos produtos retirados do estoque já superou o dinheiro injetado pelos sócios.")
+        except Exception as e:
+            st.error(f"Erro ao carregar o resumo corporativo: {e}")
+            
+        st.divider()
+
+        # --- 1. CADASTRO DE NOVOS SÓCIOS ---
+        with st.form("form_novo_socio", clear_on_submit=True):
+            st.markdown("##### 🤝 Cadastrar Novo Sócio / Investidor")
+            st.caption("O código único (Ex: SOC-001) será gerado e vinculado automaticamente ao salvar.")
+            
+            c_s1, c_s2 = st.columns(2)
+            nome_s = c_s1.text_input("Nome Completo", help="Digite exatamente como a pessoa sairá nas vendas, caso ela faça retiradas de estoque.")
+            tel_s = c_s2.text_input("WhatsApp")
+            
+            if st.form_submit_button("Adicionar ao Quadro Societário", type="secondary"):
+                if nome_s:
+                    try:
+                        aba_soc = planilha_mestre.worksheet("SOCIOS")
+                        dados_soc = aba_soc.get_all_values()
+                        
+                        # 💡 Geração Inteligente de Código (À prova de falhas/exclusões)
+                        if len(dados_soc) > 1:
+                            ultimo_cod = str(dados_soc[-1][0]) # Pega o ID da última linha da planilha
+                            try:
+                                prox_num = int(ultimo_cod.replace("SOC-", "")) + 1
+                            except:
+                                prox_num = len(dados_soc)
+                        else:
+                            prox_num = 1 # Se a planilha só tiver o cabeçalho, ele será o número 1
+                            
+                        novo_cod = f"SOC-{prox_num:03d}" # Monta no formato SOC-001, SOC-002...
+                        
+                        # Salvando no Google Sheets
+                        aba_soc.append_row([
+                            novo_cod, 
+                            nome_s.strip(), 
+                            tel_s.strip(), 
+                            datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                        ], value_input_option='RAW')
+                        
+                        st.success(f"✅ {nome_s} cadastrado com sucesso! Código gerado: **{novo_cod}**")
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao cadastrar na aba SOCIOS: {e}")
+                else:
+                    st.warning("⚠️ O Nome Completo é obrigatório para gerar o cadastro.")
+
+        st.divider()
+
+        # --- 2. APORTES DE CAPITAL (INJEÇÃO DE DINHEIRO) ---
+        st.markdown("##### 💰 Injeção de Capital (Aportes)")
+        
+        try:
+            lista_socios_select = ["---"]
+            if not df_socios.empty:
+                lista_socios_select += [f"{row['COD_SOCIO']} - {row['NOME']}" for _, row in df_socios.iterrows()]
+                
+            with st.form("form_aporte_capital", clear_on_submit=True):
+                c_a1, c_a2, c_a3 = st.columns([1.5, 1, 1.5])
+                socio_aporte = c_a1.selectbox("Quem está investindo?", lista_socios_select, help="Selecione o sócio que está transferindo o dinheiro para o caixa da loja.")
+                
+                # 💡 AJUSTE AQUI: Começa em 0.00 limpo e formata com duas casas decimais
+                valor_aporte = c_a2.number_input("Valor (R$)", min_value=0.00, value=0.00, step=0.01, format="%.2f")
+                
+                tipo_aporte = c_a3.selectbox("Destinação", ["Caixa Geral", "Marketing", "Infraestrutura", "Reinvestimento de Lucro"])
+                obs_aporte = st.text_input("Observações do Aporte")
+                
+                if st.form_submit_button("Registrar Aporte 🚀", type="primary"):
+                    # 🛡️ Travas de segurança antes de salvar
+                    if socio_aporte == "---":
+                        st.warning("⚠️ Selecione um sócio.")
+                    elif valor_aporte <= 0:
+                        st.warning("⚠️ O valor do aporte deve ser maior que zero.")
+                    else:
+                        try:
+                            aba_ap = planilha_mestre.worksheet("APORTES")
+                            cod_soc, nome_soc = socio_aporte.split(" - ")[0], socio_aporte.split(" - ")[1]
+                            aba_ap.append_row([
+                                datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M"),
+                                cod_soc, nome_soc, valor_aporte, tipo_aporte, obs_aporte
+                            ], value_input_option='RAW')
+                            st.success("✅ Capital injetado com sucesso!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar na aba APORTES: {e}")
+        except Exception as e:
+            st.error(f"Aba SOCIOS não configurada. {e}")
+
+        st.divider()
+
+        # --- 3. CAP TABLE (QUADRO SOCIETÁRIO E MÉTRICAS) ---
+        st.markdown("##### 📊 Cap Table e Balanço dos Sócios")
+        st.caption("Distribuição de Equity calculada automaticamente pelo volume financeiro aportado por cada sócio.")
+        
+        try:
+            if not df_socios.empty:
+                # O processamento numérico já foi feito lá em cima no Mini Dashboard
+                if not df_aportes.empty:
+                    aportes_por_socio = df_aportes.groupby('NOME_SOCIO')['VALOR_NUM'].sum().to_dict()
+                else:
+                    aportes_por_socio = {}
+
+                if not df_retiradas.empty:
+                    retiradas_por_socio = df_retiradas.groupby('CLIENTE')['RETIRADA_NUM'].sum().to_dict()
+                else:
+                    retiradas_por_socio = {}
+
+                # Montando a Tabela de Sócios
+                dados_cap_table = []
+                for _, row in df_socios.iterrows():
+                    n_socio = str(row['NOME']).strip()
+                    t_aporte = aportes_por_socio.get(n_socio, 0.0)
+                    t_retirada = retiradas_por_socio.get(n_socio, 0.0)
+                    balanco = t_aporte - t_retirada
+                    
+                    # Participação baseada no montante injetado
+                    participacao = (t_aporte / aporte_total_empresa * 100) if aporte_total_empresa > 0 else 0.0
+                    
+                    dados_cap_table.append({
+                        "Sócio": n_socio,
+                        "Equity (%)": f"{participacao:.1f}%",
+                        "Capital Injetado": t_aporte,
+                        "Produtos Retirados": t_retirada,
+                        "Balanço Liquido": balanco
+                    })
+                
+                df_cap = pd.DataFrame(dados_cap_table)
+                
+                st.dataframe(
+                    df_cap,
+                    column_config={
+                        "Capital Injetado": st.column_config.NumberColumn(help="Total em dinheiro que este sócio investiu.", format="R$ %.2f"),
+                        "Produtos Retirados": st.column_config.NumberColumn("Retirado (Col L)", help="Valor consumido da loja em produtos.", format="R$ %.2f"),
+                        "Balanço Liquido": st.column_config.NumberColumn(help="Capital Injetado - Produtos Retirados.", format="R$ %.2f")
+                    },
+                    use_container_width=True, hide_index=True
+                )
+                
+                # --- 4. HISTÓRICO RÁPIDO DO BANCO SWEET (INJEÇÕES E RETIRADAS) ---
+                st.divider()
+                st.markdown("#### 📜 Extrato do Banco Sweet")
+                t_inv, t_ret = st.tabs(["Injeções de Dinheiro", "Peças Retiradas"])
+                
+                with t_inv:
+                    if not df_aportes.empty:
+                        # Exibe as injeções com as colunas relevantes
+                        st.dataframe(df_aportes[['DATA', 'NOME_SOCIO', 'VALOR_R$', 'TIPO', 'OBSERVACOES']], use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nenhum aporte financeiro registrado ainda na aba APORTES.")
+                
+                with t_ret:
+                    if not df_retiradas.empty:
+                        # Exibe as peças tiradas com base na aba VENDAS
+                        st.dataframe(df_retiradas[['DATA DA VENDA', 'CLIENTE', 'PRODUTO', 'TOTAL R$', 'FORMA DE PAGAMENTO']], use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nenhuma retirada de produto registrada pelos sócios.")
+
+            else:
+                st.warning("Cadastre o primeiro sócio acima para gerar o Cap Table.")
+        except Exception as e:
+            st.error(f"Erro ao calcular Cap Table. Certifique-se que as abas SOCIOS e APORTES existem. {e}")
             
     st.markdown("### 🔍 Ficha de Cliente (Extrato Dinâmico)")
     opcoes_ficha = sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
@@ -1443,14 +1748,15 @@ elif menu_selecionado == "💰 Financeiro":
         else: 
             st.info("Nenhuma compra registrada para esta cliente ainda.")
 
-# ==========================================
+# ==========================================================
 # --- SEÇÃO 3: ESTOQUE (MEMÓRIA ETERNA + IA) ---
-# ==========================================
+# ==========================================================
 elif menu_selecionado == "📦 Estoque":
     st.subheader("📦 Gestão Inteligente de Estoque")
     df_estoque = df_full_inv.copy()
 
     if not df_estoque.empty:
+        # 📊 Processamento de Métricas
         df_estoque['EST_NUM'] = pd.to_numeric(df_estoque['ESTOQUE ATUAL'], errors='coerce').fillna(0)
         df_estoque['VENDAS_NUM'] = pd.to_numeric(df_estoque['QTD VENDIDA'], errors='coerce').fillna(0)
         df_estoque['CUSTO_NUM'] = df_estoque['CUSTO UNITÁRIO R$'].apply(limpar_v)
@@ -1461,11 +1767,12 @@ elif menu_selecionado == "📦 Estoque":
         qtd_baixos = len(df_estoque[(df_estoque['EST_NUM'] > 0) & (df_estoque['EST_NUM'] <= 3)])
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📦 Itens no Catálogo", total_skus)
-        c2.metric("💰 Capital na Prateleira", f"R$ {capital_parado:,.2f}")
-        c3.metric("🚨 Esgotados / Furos", qtd_furos)
-        c4.metric("⚠️ Estoque Baixo (≤3)", qtd_baixos)
+        c1.metric("📦 Variações (SKUs)", total_skus, help="Total de variações cadastradas.")
+        c2.metric("💰 Capital na Prateleira", f"R$ {capital_parado:,.2f}", help="Soma financeira do estoque físico.")
+        c3.metric("🚨 Esgotados / Furos", qtd_furos, help="Produtos com estoque zero ou negativo.")
+        c4.metric("⚠️ Estoque Baixo (≤3)", qtd_baixos, help="Produtos em zona de risco.")
 
+        # 📈 Central de Tendências
         with st.expander("📊 Central de Reposição e Tendências", expanded=False):
             tab1, tab2 = st.tabs(["🚨 Malha Fina", "🏆 Campeões de Venda"])
             with tab1:
@@ -1484,53 +1791,75 @@ elif menu_selecionado == "📦 Estoque":
     # 🤖 ENTRADA INTELIGENTE (IA GEMINI)
     # ==========================================
     st.divider()
+    
+    # 💡 Memória Âncora: Protege a tabela da IA de desaparecer quando você salva um produto
+    if 'resultado_ia_nota' not in st.session_state:
+        st.session_state['resultado_ia_nota'] = None
+
     with st.expander("🤖 Entrada Inteligente (Ler Nota Fiscal com IA)", expanded=False):
-        st.write("Tire uma foto da Nota Fiscal ou Recibo do fornecedor e deixe a IA ler os itens para você!")
+        st.write("Tire uma foto da Nota Fiscal e deixe a IA ler os itens!")
         foto_nf = st.file_uploader("Envie a foto da Nota", type=['png', 'jpg', 'jpeg'], key="uploader_ia_estoque")
         
         if foto_nf is not None:
             if st.button("🧠 Ler Documento", use_container_width=True, key="btn_ler_ia"):
-                with st.spinner("A IA está analisando a imagem. Isso leva alguns segundos... ⏳"):
+                with st.spinner("Analisando imagem... ⏳"):
                     try:
-                        # Conecta com a sua chave
+                        import google.generativeai as genai
+                        from PIL import Image
                         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-                        modelo_ia = genai.GenerativeModel('gemini-2.5-flash')
-                        
-                        # Prepara a imagem
                         img = Image.open(foto_nf)
                         
-                        # A "ordem" que damos para a IA
                         prompt = """
-                        Você é o assistente de estoque da 'Sweet Home Enxovais'. 
-                        Sua tarefa é ler esta nota fiscal ou recibo e extrair os produtos.
-                        
-                        Aja como um sistema. Retorne o resultado EXATAMENTE no formato de uma tabela Markdown com as seguintes colunas:
-                        | Qtd | Descrição do Produto | Custo Unitário (R$) | Valor Total (R$) |
-                        
-                        REGRAS RÍGIDAS:
-                        1. Retorne APENAS a tabela. Não escreva nenhum texto de saudação, explicação ou formatação fora da tabela.
-                        2. Extraia os valores com precisão.
-                        3. Se a imagem não for uma nota fiscal ou estiver ilegível, retorne APENAS a frase: "⚠️ Documento ilegível ou não reconhecido. Tente enviar uma foto mais nítida."
+                        Você é um auditor de dados e leitor óptico de extrema precisão da 'Sweet Home Enxovais'. 
+                        Sua única função é ler a imagem desta nota fiscal/recibo e extrair a lista de produtos comprados com 100% de exatidão.
+
+                        Siga estas REGRAS RÍGIDAS E ABSOLUTAS:
+                        1. EXTRAÇÃO LITERAL: Copie os nomes dos produtos, quantidades e valores EXATAMENTE como estão impressos. Não deduza, não adivinhe, não abrevie e não corrija erros de português que estejam no papel.
+                        2. CÓDIGO DO PRODUTO: Procure atentamente por números de referência, códigos EAN, ou códigos de fábrica que costumam ficar no início da linha, antes ou depois do nome do produto. Se não encontrar nenhum código, escreva "S/N".
+                        3. ATENÇÃO AOS NÚMEROS: Revise visualmente os valores de 'Custo Unitário' e 'Valor Total'. Respeite as vírgulas e pontos (ex: 1.500,00). Não tente refazer a matemática se a nota estiver com erro, apenas transcreva o que está lá.
+                        4. IGNORE O "LIXO VISUAL": Ignore totalmente CNPJ, endereço da loja, mensagens de agradecimento, cálculos de impostos (ICMS, IPI) ou troco. Foque APENAS nas linhas dos produtos/itens.
+                        5. FORMATO OBRIGATÓRIO: Retorne o resultado EXATAMENTE no formato de uma tabela Markdown com as seguintes colunas:
+                        | Cód. Fábrica | Qtd | Descrição do Produto | Custo Unitário (R$) | Valor Total (R$) |
+                        6. SILÊNCIO TOTAL: Retorne APENAS a tabela Markdown. É estritamente proibido escrever "Aqui está a tabela", "Claro, vou ajudar" ou qualquer outra palavra fora da tabela.
+                        7. SEGURANÇA: Se a imagem não for uma nota fiscal, não contiver produtos, ou estiver impossível de ler, retorne APENAS a frase exata: "⚠️ Documento ilegível ou sem itens reconhecidos. Tente uma foto mais nítida."
                         """
                         
-                        # A mágica acontece aqui
-                        resposta = modelo_ia.generate_content([prompt, img])
+                        # Loop de Sobrevivência (Contingência de Modelos)
+                        modelos_para_testar = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro-vision"]
+                        resposta_ia = None
                         
-                        st.success("✅ Leitura Concluída!")
-                        st.markdown("#### 📋 Produtos Identificados na Nota:")
-                        
-                        # Exibe a resposta da IA nativamente
-                        st.markdown(resposta.text)
-                        st.warning("💡 Dica: Use a lista acima para copiar os nomes e dar a entrada rápida no 'Radar de Entrada' logo abaixo.")
-                        
+                        for m in modelos_para_testar:
+                            try:
+                                modelo_ia = genai.GenerativeModel(m)
+                                resposta_ia = modelo_ia.generate_content([prompt, img])
+                                if resposta_ia:
+                                    break # Sucesso, quebra o loop
+                            except:
+                                continue # Falhou, tenta o próximo
+                                
+                        if resposta_ia:
+                            # 💡 Guarda na memória em vez de apenas imprimir
+                            st.session_state['resultado_ia_nota'] = resposta_ia.text
+                        else:
+                            st.error("⚠️ Nenhum modelo de IA da Google está respondendo no momento. Tente novamente em alguns minutos.")
+                            
                     except Exception as e:
-                        st.error(f"⚠️ Ocorreu um erro na IA: {e}")
-                        st.caption("Verifique se a chave do Google está correta nos Secrets.")
+                        st.error(f"⚠️ Erro no sistema de IA: {e}")
 
+        # 💡 Se a IA leu algo, a tabela fica fixada aqui fora do botão, imune ao recarregamento
+        if st.session_state['resultado_ia_nota']:
+            st.success("✅ Leitura Fixada na Tela!")
+            st.markdown(st.session_state['resultado_ia_nota'])
+            st.warning("💡 Dica: A tabela acima não vai sumir quando você cadastrar o produto! Copie as informações em lote.")
+            
+            # Botão para limpar a tela quando terminar de cadastrar aquela nota fiscal
+            if st.button("🧹 Limpar Leitura (Próxima Nota Fiscal)"):
+                st.session_state['resultado_ia_nota'] = None
+                st.rerun()
+
+    # 🔍 RADAR DE ENTRADA (ATUALIZAÇÃO RÁPIDA)
     st.divider()
     st.write("### 🔍 Radar de Entrada")
-    
-    # 🎯 CORREÇÃO AQUI: Atribuindo o valor do input à variável 'busca_radar'
     busca_radar = st.text_input("Pesquisar produto para atualizar", placeholder="Ex: lencol casal ou 800", key="txt_busca_radar")
     
     if busca_radar and not df_estoque.empty:
@@ -1543,62 +1872,68 @@ elif menu_selecionado == "📦 Estoque":
             opcs = ["Nenhum. É um produto 100% NOVO."] + [f"{r['CÓD. PRÓDUTO']} - {r['NOME DO PRODUTO']}" for _, r in res.iterrows()]
             p_alvo = st.radio("Produto encontrado:", opcs, key="res_radar_radio")
             
-            if p_alvo != "Nenhum. É um produto 100% NOVO.":
-                cod_e = p_alvo.split(" - ")[0]
-                idx = df_estoque[df_estoque['CÓD. PRÓDUTO'] == cod_e].index[0]
-                lin_p = int(idx) + 2
-                nome_e = df_estoque.loc[idx, 'NOME DO PRODUTO']
-                est_h = int(pd.to_numeric(df_estoque.loc[idx, 'ESTOQUE ATUAL'], errors='coerce') or 0)
-                vend_g = int(pd.to_numeric(df_estoque.loc[idx, 'QTD VENDIDA'], errors='coerce') or 0)
-                comp_c = int(pd.to_numeric(df_estoque.loc[idx, 'QUANTIDADE'], errors='coerce') or 0)
-                custo_at = limpar_v(df_estoque.loc[idx, 'CUSTO UNITÁRIO R$'])
-                preco_at = limpar_v(df_estoque.loc[idx, 'VALOR DE VENDA'])
+            # 🛡️ PROTEÇÃO CONTRA ATTRIBUTEERROR NO SPLIT
+            if p_alvo and " - " in str(p_alvo):
+                cod_e = str(p_alvo).split(" - ")[0]
+                idx_list = df_estoque[df_estoque['CÓD. PRÓDUTO'] == cod_e].index
+                
+                if not idx_list.empty:
+                    idx = idx_list[0]
+                    lin_p = int(idx) + 2
+                    nome_e = df_estoque.loc[idx, 'NOME DO PRODUTO']
+                    est_h = int(pd.to_numeric(df_estoque.loc[idx, 'ESTOQUE ATUAL'], errors='coerce') or 0)
+                    vend_g = int(pd.to_numeric(df_estoque.loc[idx, 'QTD VENDIDA'], errors='coerce') or 0)
+                    comp_c = int(pd.to_numeric(df_estoque.loc[idx, 'QUANTIDADE'], errors='coerce') or 0)
+                    custo_at = limpar_v(df_estoque.loc[idx, 'CUSTO UNITÁRIO R$'])
+                    preco_at = limpar_v(df_estoque.loc[idx, 'VALOR DE VENDA'])
 
-                acao = st.selectbox("Ação:", ["Selecione...", "1. Reposição", "2. Novo Lote (Preço Novo)", "3. Correção"], key="acao_radar_select")
+                    acao = st.selectbox("Ação:", ["Selecione...", "1. Reposição", "2. Novo Lote (Preço Novo)", "3. Correção"], key="acao_radar_select")
 
-                if acao == "1. Reposição":
-                    with st.form("f_rep"):
-                        q_nova = st.number_input("Quantidade recebida", 1)
-                        if st.form_submit_button("Confirmar Entrada"):
-                            with st.spinner("Atualizando..."):
-                                aba = planilha_mestre.worksheet("INVENTÁRIO")
-                                aba.update_acell(f"C{lin_p}", comp_c + q_nova)
-                                aba.update_acell(f"J{lin_p}", datetime.now().strftime("%d/%m/%Y"))
-                                planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "REPOSIÇÃO", nome_e, f"+{q_nova} un.", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                                st.success("Estoque Atualizado!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                    if acao == "1. Reposição":
+                        with st.form("f_rep"):
+                            q_nova = st.number_input("Quantidade recebida", 1)
+                            if st.form_submit_button("Confirmar Entrada"):
+                                with st.spinner("Atualizando..."):
+                                    aba = planilha_mestre.worksheet("INVENTÁRIO")
+                                    aba.update_acell(f"C{lin_p}", comp_c + q_nova)
+                                    aba.update_acell(f"J{lin_p}", datetime.now().strftime("%d/%m/%Y"))
+                                    planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "REPOSIÇÃO", nome_e, f"+{q_nova} un.", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
+                                    st.success("Estoque Atualizado!"); st.cache_data.clear(); st.rerun()
 
-                elif acao == "2. Novo Lote (Preço Novo)":
-                    with st.form("f_lote"):
-                        c1, c2, c3 = st.columns(3)
-                        q_l = c1.number_input("Qtd nova", 0)
-                        cu_l = c2.number_input("Novo Custo", value=float(custo_at))
-                        pr_l = c3.number_input("Novo Preço", value=float(preco_at))
-                        puxar = st.checkbox(f"Puxar {est_h} itens antigos?", value=True)
-                        if st.form_submit_button("Gerar Lote"):
-                            with st.spinner("Criando lote..."):
-                                aba = planilha_mestre.worksheet("INVENTÁRIO")
-                                f_total_e = '=SE(INDIRETO("C"&LIN())=""; ""; ARRED(INDIRETO("C"&LIN()) * INDIRETO("D"&LIN()); 2))'
-                                f_estoque_h = '=SE(INDIRETO("C"&LIN())=""; ""; INDIRETO("C"&LIN()) - INDIRETO("G"&LIN()))'
-                                base = str(cod_e).split(".")[0]; ext = str(cod_e).split(".")[1] if "." in str(cod_e) else "0"
-                                n_cod = f"{base}.{int(ext)+1}"
-                                if puxar: aba.update_acell(f"C{lin_p}", vend_g)
-                                nova_linha = [n_cod, f"{nome_e} (Lote {int(ext)+1})", q_l + (est_h if puxar else 0), cu_l, f_total_e, 3, 0, f_estoque_h, pr_l, datetime.now().strftime("%d/%m/%Y"), ""]
-                                cel_tot = aba.find("TOTAIS")
-                                if cel_tot: aba.insert_row(nova_linha, index=cel_tot.row, value_input_option='RAW')
-                                else: aba.append_row(nova_linha, value_input_option='RAW')
-                                planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "NOVO LOTE", nome_e, f"Lote {n_cod}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                                st.success(f"Lote {n_cod} criado!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                    elif acao == "2. Novo Lote (Preço Novo)":
+                        with st.form("f_lote"):
+                            c1, c2, c3 = st.columns(3)
+                            q_l = c1.number_input("Qtd nova", 0)
+                            cu_l = c2.number_input("Novo Custo", value=float(custo_at))
+                            pr_l = c3.number_input("Novo Preço", value=float(preco_at))
+                            puxar = st.checkbox(f"Puxar {est_h} itens antigos?", value=True)
+                            if st.form_submit_button("Gerar Lote"):
+                                with st.spinner("Criando lote..."):
+                                    aba = planilha_mestre.worksheet("INVENTÁRIO")
+                                    f_total_e = '=SE(INDIRETO("C"&LIN())=""; ""; ARRED(INDIRETO("C"&LIN()) * INDIRETO("D"&LIN()); 2))'
+                                    f_estoque_h = '=SE(INDIRETO("C"&LIN())=""; ""; INDIRETO("C"&LIN()) - INDIRETO("G"&LIN()))'
+                                    base = str(cod_e).split(".")[0]
+                                    ext = str(cod_e).split(".")[1] if "." in str(cod_e) else "0"
+                                    n_cod = f"{base}.{int(ext)+1}"
+                                    if puxar: aba.update_acell(f"C{lin_p}", vend_g)
+                                    nova_linha = [n_cod, f"{nome_e} (Lote {int(ext)+1})", q_l + (est_h if puxar else 0), cu_l, f_total_e, 3, 0, f_estoque_h, pr_l, datetime.now().strftime("%d/%m/%Y"), ""]
+                                    cel_tot = aba.find("TOTAIS")
+                                    if cel_tot: aba.insert_row(nova_linha, index=cel_tot.row, value_input_option='RAW')
+                                    else: aba.append_row(nova_linha, value_input_option='RAW')
+                                    planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "NOVO LOTE", nome_e, f"Lote {n_cod}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
+                                    st.success(f"Lote {n_cod} criado!"); st.cache_data.clear(); st.rerun()
 
-                elif acao == "3. Correção":
-                    with st.form("f_cor"):
-                        real = st.number_input("Qtd real física", value=est_h)
-                        if st.form_submit_button("Corrigir"):
-                            with st.spinner("Sincronizando..."):
-                                aba = planilha_mestre.worksheet("INVENTÁRIO")
-                                aba.update_acell(f"C{lin_p}", real + vend_g)
-                                planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CORREÇÃO", nome_e, f"Ajustado para {real}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                                st.success("Corrigido!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                    elif acao == "3. Correção":
+                        with st.form("f_cor"):
+                            real = st.number_input("Qtd real física", value=est_h)
+                            if st.form_submit_button("Corrigir"):
+                                with st.spinner("Sincronizando..."):
+                                    aba = planilha_mestre.worksheet("INVENTÁRIO")
+                                    aba.update_acell(f"C{lin_p}", real + vend_g)
+                                    planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CORREÇÃO", nome_e, f"Ajustado para {real}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
+                                    st.success("Corrigido!"); st.cache_data.clear(); st.rerun()
 
+    # ➕ CADASTRO DE NOVO PRODUTO
     st.divider()
     with st.expander("➕ Cadastrar Novo Produto"):
         with st.form("f_est_original", clear_on_submit=True):
@@ -1611,11 +1946,15 @@ elif menu_selecionado == "📦 Estoque":
                     f_estoque_h = '=SE(INDIRETO("C"&LIN())=""; ""; INDIRETO("C"&LIN()) - INDIRETO("G"&LIN()))'
                     linha_manual = [n_c, n_n, n_q, n_custo, f_total_e, 3, 0, f_estoque_h, n_v, datetime.now().strftime("%d/%m/%Y"), ""]
                     cel_tot = aba.find("TOTAIS")
-                    if cel_tot: aba.insert_row(linha_manual, index=cel_tot.row, value_input_option='RAW')
-                    else: aba.append_row(linha_manual, value_input_option='RAW')
+                    
+                    # 💡 A MÁGICA: USER_ENTERED ativa as fórmulas
+                    if cel_tot: aba.insert_row(linha_manual, index=cel_tot.row, value_input_option='USER_ENTERED')
+                    else: aba.append_row(linha_manual, value_input_option='USER_ENTERED')
+                    
                     planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CADASTRO", n_n, f"Cód: {n_c}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
-                    st.success("✅ Cadastrado!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                    st.success("✅ Cadastrado!"); st.cache_data.clear(); st.rerun()
 
+    # 📜 HISTÓRICO E BUSCA FINAL (DENTRO DA ABA ESTOQUE)
     st.divider()
     st.write("### 📜 Histórico de Movimentações (Banco de Dados)")
     try:
@@ -1628,7 +1967,8 @@ elif menu_selecionado == "📦 Estoque":
     st.divider()
     busca_lista = st.text_input("🔍 Buscar na Lista Abaixo", key="txt_busca_lista_estoque")
     df_ver = df_full_inv.copy()
-    if busca_lista: df_ver = df_ver[df_ver.apply(lambda r: busca_lista.lower() in str(r).lower(), axis=1)]
+    if busca_lista: 
+        df_ver = df_ver[df_ver.apply(lambda r: busca_lista.lower() in str(r).lower(), axis=1)]
     st.dataframe(df_ver, use_container_width=True, hide_index=True)
     
 # ==========================================
@@ -1942,24 +2282,32 @@ elif menu_selecionado == "📂 Documentos":
     st.divider()
     st.write("### 📤 Enviar Arquivo")
     
-    lista_categorias = ["Foto de Produto", "Nota Fiscal", "Comprovante", "Recibo / Pgto", "Contrato", "Outros"]
+    # 1. 🆕 Expandimos e organizamos as categorias para o mundo ERP
+    lista_categorias = ["Foto de Produto", "Comprovante Cliente", "Recibo / Pgto Cliente", "Nota Fiscal (Fornecedor)", "Boleto / Despesa", "Contrato", "Outros"]
     cat_escolhida = st.selectbox("1️⃣ Categoria do Documento", lista_categorias)
     
     with st.form("form_upload_cloudinary", clear_on_submit=True):
         st.write("2️⃣ **Detalhes e Arquivo**")
         vinc_cli = "Nenhum"
         vinc_prod = "Nenhum"
+        vinc_forn = "Nenhum" # 🆕 Nova variável para o Fornecedor
         nome_livre = ""
         
-        if cat_escolhida in ["Foto de Produto", "Nota Fiscal"]:
+        if cat_escolhida == "Foto de Produto":
             st.info("📦 O sistema dará o nome do arquivo automaticamente com base no produto.")
             opcoes_prod = ["Nenhum"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
             vinc_prod = st.selectbox("Selecione o Produto:", opcoes_prod)
         
-        elif cat_escolhida in ["Comprovante", "Recibo / Pgto"]:
-            st.info("👤 O sistema dará o nome do arquivo automaticamente com base na cliente.")
+        elif cat_escolhida in ["Comprovante Cliente", "Recibo / Pgto Cliente"]:
+            st.info("👤 O sistema vinculará este documento à cliente correspondente.")
             opcoes_cli = ["Nenhum"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()]
             vinc_cli = st.selectbox("Selecione a Cliente:", opcoes_cli)
+            
+        # 🆕 A GRANDE MÁGICA: Conectando com a base contábil
+        elif cat_escolhida in ["Nota Fiscal (Fornecedor)", "Boleto / Despesa"]:
+            st.info("🏭 O sistema vinculará este documento ao Fornecedor correspondente.")
+            opcoes_forn = ["Nenhum"] + [f"{k} - {v['nome']}" for k, v in banco_de_fornecedores.items()]
+            vinc_forn = st.selectbox("Selecione o Fornecedor:", opcoes_forn)
         
         else:
             nome_livre = st.text_input("Nome ou Descrição Breve", help="Exemplo: Conta de Luz Janeiro")
@@ -1970,20 +2318,26 @@ elif menu_selecionado == "📂 Documentos":
             erro = False
             if not arquivo_subido:
                 st.error("⚠️ Você esqueceu de anexar o arquivo!"); erro = True
-            elif cat_escolhida in ["Foto de Produto", "Nota Fiscal"] and vinc_prod == "Nenhum":
+            elif cat_escolhida == "Foto de Produto" and vinc_prod == "Nenhum":
                 st.error("⚠️ Selecione um produto."); erro = True
-            elif cat_escolhida in ["Comprovante", "Recibo / Pgto"] and vinc_cli == "Nenhum":
+            elif cat_escolhida in ["Comprovante Cliente", "Recibo / Pgto Cliente"] and vinc_cli == "Nenhum":
                 st.error("⚠️ Selecione uma cliente."); erro = True
+            elif cat_escolhida in ["Nota Fiscal (Fornecedor)", "Boleto / Despesa"] and vinc_forn == "Nenhum":
+                st.error("⚠️ Selecione um fornecedor."); erro = True
             elif cat_escolhida in ["Contrato", "Outros"] and not nome_livre:
                 st.error("⚠️ Digite um nome para o documento."); erro = True
 
             if not erro:
+                # ⚙️ Lógica de Nomenclatura Dinâmica
                 if vinc_prod != "Nenhum":
                     nome_gerado = f"[{cat_escolhida.upper()}] {vinc_prod}"
                     vinculo_final = vinc_prod
                 elif vinc_cli != "Nenhum":
                     nome_gerado = f"[{cat_escolhida.upper()}] {vinc_cli}"
                     vinculo_final = vinc_cli
+                elif vinc_forn != "Nenhum": # 🆕 Regra do Fornecedor adicionada
+                    nome_gerado = f"[{cat_escolhida.upper()}] {vinc_forn}"
+                    vinculo_final = vinc_forn
                 else:
                     nome_gerado = f"[{cat_escolhida.upper()}] {nome_livre}"
                     vinculo_final = "-"
@@ -1991,48 +2345,783 @@ elif menu_selecionado == "📂 Documentos":
                 nome_limpo = nome_gerado.replace("/", "-").replace(":", "")
 
                 with st.spinner(f"Subindo para o servidor seguro... ⏳"):
+                    # 1. Tenta fazer o upload para o Cloudinary
                     f_id, f_link = upload_para_cloudinary(arquivo_subido.getvalue(), nome_limpo, cat_escolhida)
                     
+                    # 2. Só grava na planilha SE o upload realmente funcionou
                     if f_id:
                         try:
+                            import pytz
+                            from datetime import datetime
+                            
                             aba_doc = planilha_mestre.worksheet("DOCUMENTOS")
+                            
+                            # Se a aba estiver totalmente limpa (sem cabeçalho), ele cria na hora
                             if len(aba_doc.get_all_values()) == 0:
                                 aba_doc.append_row(["DATA", "TIPO", "NOME", "ID_ARQUIVO", "LINK_DRIVE", "VINCULO", "STATUS_ODOO"])
                             
                             status_odoo = "Pronto para Site" if cat_escolhida == "Foto de Produto" else "-"
                             
-                            aba_doc.append_row([
-                                datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                cat_escolhida, nome_limpo, f_id, f_link, vinculo_final, status_odoo
-                            ], value_input_option='USER_ENTERED')
-                            st.success(f"✅ Arquivado com sucesso!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                            # Monta a linha exata (A até G)
+                            linha_nova = [
+                                datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M"),
+                                cat_escolhida, 
+                                nome_limpo, 
+                                f_id, 
+                                f_link, 
+                                vinculo_final, 
+                                status_odoo
+                            ]
+                            
+                            # 💡 A MÁGICA: O robô olha os dados REAIS da Coluna A (Data) e acha a linha exata
+                            valores_coluna_a = aba_doc.col_values(1)
+                            
+                            # Tira os espaços em branco perdidos no meio do caminho
+                            linhas_preenchidas = [v for v in valores_coluna_a if str(v).strip() != ""]
+                            proxima_linha_vazia = len(linhas_preenchidas) + 1
+                            
+                            # Injeta a linha forçadamente no lugar exato, empurrando a planilha
+                            aba_doc.insert_row(linha_nova, index=proxima_linha_vazia, value_input_option='RAW')
+                            
+                            st.success(f"✅ Arquivado com sucesso no Cofre e na Planilha!")
+                            st.cache_data.clear()
+                            st.cache_resource.clear()
+                            st.rerun()
+                            
                         except Exception as e: 
-                            st.error(f"Erro na planilha: {e}")
+                            st.error(f"❌ Erro ao escrever na planilha do Google: {e}")
+                    else:
+                        # 💡 ALERTA NOVO: Se o Cloudinary falhar, agora ele te avisa e não deixa você no escuro!
+                        st.error("❌ Falha no upload da imagem/PDF. O sistema cancelou o registro para não gerar dados órfãos na planilha.")
 
     st.divider()
     st.write("### 🗂️ Histórico Geral de Documentos")
     
     if not df_docs.empty:
-        categorias_existentes = ["Tudo"] + sorted(df_docs['TIPO'].unique().tolist())
-        filtro_cat = st.selectbox("Filtrar por Categoria:", categorias_existentes)
-        
-        df_filtrado = df_docs.copy()
-        if filtro_cat != "Tudo":
-            df_filtrado = df_filtrado[df_filtrado['TIPO'] == filtro_cat]
-            
-        busca_doc = st.text_input("🔍 Pesquisar por Nome ou Código...")
-        if busca_doc:
-            df_filtrado = df_filtrado[df_filtrado.apply(lambda r: busca_doc.lower() in str(r).lower(), axis=1)]
+        # 💡 CORREÇÃO 1: Limpeza profunda (Extermina a "categoria fantasma" em branco)
+        df_docs['TIPO'] = df_docs['TIPO'].astype(str).str.strip() # Remove espaços acidentais
+        df_docs_limpo = df_docs[(df_docs['TIPO'] != "") & (df_docs['TIPO'].str.lower() != "nan")].copy()
 
-        for _, r in df_filtrado.sort_index(ascending=False).head(10).iterrows():
-            with st.container():
-                col_a, col_b, col_c = st.columns([1, 3, 1])
-                col_a.write(f"📅 {str(r['DATA']).split(' ')[0]}")
-                col_b.write(f"**{r['TIPO']}**\n\n<small>{r['NOME']}</small>", unsafe_allow_html=True)
-                col_c.link_button("👁️ Abrir", r['LINK_DRIVE'], use_container_width=True)
-                st.divider()
+        if not df_docs_limpo.empty:
+            categorias_existentes = ["Tudo"] + sorted(df_docs_limpo['TIPO'].unique().tolist())
+            filtro_cat = st.selectbox("Filtrar por Categoria:", categorias_existentes)
+            
+            df_filtrado = df_docs_limpo.copy()
+            if filtro_cat != "Tudo":
+                df_filtrado = df_filtrado[df_filtrado['TIPO'] == filtro_cat]
+                
+            busca_doc = st.text_input("🔍 Pesquisar por Nome ou Código...")
+            if busca_doc:
+                df_filtrado = df_filtrado[df_filtrado.apply(lambda r: busca_doc.lower() in str(r).lower(), axis=1)]
+
+            # 💡 CORREÇÃO 2: Removendo o gargalo! Aumentei de 10 para 50 arquivos (ou o número que quiser)
+            docs_para_mostrar = df_filtrado.sort_index(ascending=False).head(50)
+            
+            st.caption(f"Mostrando {len(docs_para_mostrar)} documento(s) encontrados.")
+
+            for _, r in docs_para_mostrar.iterrows():
+                with st.container():
+                    col_a, col_b, col_c = st.columns([1, 3, 1])
+                    col_a.write(f"📅 {str(r['DATA']).split(' ')[0]}")
+                    col_b.write(f"**{r['TIPO']}**\n\n<small>{r['NOME']}</small>", unsafe_allow_html=True)
+                    col_c.link_button("👁️ Abrir", str(r.get('LINK_DRIVE', '')), use_container_width=True)
+                    st.divider()
+        else:
+            st.info("Nenhum documento válido encontrado na base.")
     else:
         st.info("O cofre geral está vazio.")
+
+    # =======================================================
+    # 🆕 O MÓDULO DE CORREÇÃO DE ERROS (DESTRUIÇÃO TOTAL: PLANILHA + CLOUDINARY)
+    # =======================================================
+    st.divider()
+    st.write("#### ✏️ / 🗑️ Gerenciar Arquivos (Correção de Erros)")
+    st.info("Subiu o arquivo errado ou duplicado? Escolha o documento abaixo para excluí-lo definitivamente do sistema e da nuvem.")
+
+    if not df_docs.empty:
+        ultimos_docs = df_docs.tail(30).copy()
+        ultimos_docs['LINHA_SHEETS'] = ultimos_docs.index + 2
+        ultimos_docs = ultimos_docs.iloc[::-1]
+
+        lista_exclusao_doc = []
+        dict_dados_ex_doc = {}
+        
+        for _, r in ultimos_docs.iterrows():
+            data_doc = str(r.get('DATA', '')).split(' ')[0]
+            tipo_doc = str(r.get('TIPO', ''))
+            nome_doc = str(r.get('NOME', ''))
+            id_cloud_doc = str(r.get('ID_ARQUIVO', '')) 
+            
+            texto_item = f"📅 {data_doc} | 📂 {tipo_doc} | 📄 {nome_doc}"
+            lista_exclusao_doc.append(texto_item)
+            
+            dict_dados_ex_doc[texto_item] = {
+                'linha': r['LINHA_SHEETS'],
+                'id_cloud': id_cloud_doc
+            }
+
+        doc_excluir = st.selectbox("Selecione o documento que deseja EXCLUIR:", ["---"] + lista_exclusao_doc)
+
+        if doc_excluir != "---":
+            st.error("⚠️ Atenção: Esta ação apagará o arquivo físico da nuvem e a linha da planilha permanentemente.")
+            if st.button("🗑️ Destruir Documento Totalmente"):
+                
+                dados_alvo = dict_dados_ex_doc[doc_excluir]
+                linha_alvo_ex = dados_alvo['linha']
+                id_alvo_ex = dados_alvo['id_cloud']
+                
+                with st.spinner("Apagando da nuvem e do sistema... ⏳"):
+                    try:
+                        # 1️⃣ PRIMEIRO: Manda o Cloudinary destruir o arquivo físico
+                        if id_alvo_ex and str(id_alvo_ex).lower() not in ["nan", "", "none"]:
+                            import cloudinary.uploader
+                            try:
+                                cloudinary.uploader.destroy(id_alvo_ex)
+                            except Exception as cloud_err:
+                                st.warning(f"O arquivo já não estava no Cloudinary ou houve falha na nuvem: {cloud_err}")
+
+                        # 2️⃣ SEGUNDO: Apaga a linha do Google Sheets
+                        aba_doc_ex = planilha_mestre.worksheet("DOCUMENTOS")
+                        aba_doc_ex.delete_rows(linha_alvo_ex)
+                        
+                        st.success("🗑️ Documento apagado com sucesso do Cloudinary E da base de dados!")
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Erro ao excluir o documento: {e}")
+
+# ==========================================
+# --- SEÇÃO 3: COMPRAS E DESPESAS (CONTÁBIL) ---
+# ==========================================
+elif menu_selecionado == "🏭 Compras e Despesas":
+    st.markdown("### 🏭 Gestão de Compras e Contas a Pagar")
+    st.write("Controle de fornecedores, pagamentos de estoque e despesas fixas da loja.")
+
+    # 1. Preparação dos Dados
+    df_desp = df_despesas.copy()
+    if not df_desp.empty:
+        df_desp.columns = [c.strip().upper() for c in df_desp.columns]
+        # Garante que vai achar a coluna de valor
+        col_valor = 'VALOR R$' if 'VALOR R$' in df_desp.columns else df_desp.columns[4]
+        df_desp['VALOR_NUM'] = df_desp[col_valor].apply(limpar_v)
+        df_desp['STATUS_LIMPO'] = df_desp.get('STATUS', pd.Series(dtype=str)).astype(str).str.strip().str.upper()
+    else:
+        df_desp['VALOR_NUM'] = 0.0
+        df_desp['STATUS_LIMPO'] = ""
+
+    t_dash, t_despesas, t_fornecedores = st.tabs(["📊 Dashboard Contábil", "💸 Lançar e Pagar Contas", "🏭 Fornecedores"])
+
+    # ------------------------------------------
+    # ABA 1: DASHBOARD
+    # ------------------------------------------
+    with t_dash:
+        if not df_desp.empty:
+            pendentes = df_desp[df_desp['STATUS_LIMPO'] == 'PENDENTE']
+            pagos = df_desp[df_desp['STATUS_LIMPO'] == 'PAGO']
+
+            total_pendente = pendentes['VALOR_NUM'].sum() if not pendentes.empty else 0.0
+            total_pago = pagos['VALOR_NUM'].sum() if not pagos.empty else 0.0
+
+            c1, c2 = st.columns(2)
+            c1.metric("🔴 Contas a Pagar (Pendentes)", f"R$ {total_pendente:,.2f}", help="Tudo que já foi registrado mas ainda não foi pago.")
+            c2.metric("🟢 Despesas Pagas (Histórico)", f"R$ {total_pago:,.2f}", help="Total de saídas de caixa já quitadas.")
+
+            st.divider()
+            
+            col_graf, col_lista = st.columns([1.5, 1])
+            with col_graf:
+                st.write("#### Onde o dinheiro está sendo investido?")
+                if not pagos.empty:
+                    import plotly.express as px
+                    gastos_cat = pagos.groupby('CATEGORIA')['VALOR_NUM'].sum().reset_index()
+                    fig_desp = px.pie(gastos_cat, values='VALOR_NUM', names='CATEGORIA', hole=0.4, 
+                                      color_discrete_sequence=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0'])
+                    fig_desp.update_traces(textposition='inside', textinfo='percent+label')
+                    fig_desp.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False)
+                    st.plotly_chart(fig_desp, use_container_width=True)
+                else:
+                    st.info("Nenhuma despesa paga registrada ainda para gerar o gráfico.")
+
+            with col_lista:
+                st.write("#### 🚨 Próximos Vencimentos")
+                if not pendentes.empty:
+                    # Ordena pelos vencimentos mais próximos
+                    pend_show = pendentes.copy()
+                    pend_show['VENC_DT'] = pd.to_datetime(pend_show['VENCIMENTO'], format='%d/%m/%Y', errors='coerce')
+                    pend_show = pend_show.sort_values('VENC_DT')
+                    
+                    for _, row in pend_show.head(5).iterrows():
+                        st.error(f"📅 **{row['VENCIMENTO']}**\n\n🏭 {row['FORNECEDOR / DESPESA']}\n\n💰 R$ {row['VALOR_NUM']:,.2f}")
+                else:
+                    st.success("Tudo em dia! Nenhuma conta pendente no momento.")
+        else:
+            st.info("Aguardando o primeiro lançamento de despesa para gerar o Dashboard.")
+
+    # ------------------------------------------
+    # ABA 2: LANÇAMENTOS E BAIXAS (COM HISTÓRICO E EXCLUSÃO)
+    # ------------------------------------------
+    with t_despesas:
+        col_nova, col_baixa = st.columns(2)
+        
+        with col_nova:
+            st.write("#### ➕ Nova Despesa / Compra")
+            with st.form("form_nova_despesa", clear_on_submit=True):
+                # Puxa os fornecedores ou permite avulso
+                opcoes_forn = ["Avulso (Sem Fornecedor)"] + [f"{k} - {v['nome']}" for k,v in banco_de_fornecedores.items()]
+                f_forn = st.selectbox("Quem estamos pagando?", opcoes_forn)
+                
+                f_desc = st.text_input("Descrição da Compra", placeholder="Ex: Fatura Tecidos, Conta de Luz...")
+                f_cat = st.selectbox("Categoria", ["Estoque / Mercadorias", "Logística / Fretes", "Insumos / Embalagens", "Despesas Fixas", "Marketing", "Outros"])
+                
+                c_v, c_d = st.columns(2)
+                f_val_total = c_v.number_input("Valor TOTAL (R$)", min_value=0.0, format="%.2f")
+                f_venc_ini = c_d.date_input("Vencimento da 1ª Parcela")
+                
+                # MOTOR DE PARCELAMENTO
+                c_p1, c_p2 = st.columns(2)
+                f_parcelas = c_p1.number_input("Qtd. de Parcelas", min_value=1, value=1, step=1, help="Deixe 1 para contas à vista/únicas.")
+                f_freq = c_p2.selectbox("Frequência", ["Mensal (30 dias)", "Quinzenal (15 dias)", "Semanal (7 dias)"])
+                
+                f_status = st.radio("A 1ª parcela já foi paga hoje?", ["Não (Pendente)", "Sim (Pago)"], horizontal=True)
+
+                if st.form_submit_button("Registrar Conta 💾", type="primary"):
+                    if f_val_total > 0 and f_desc:
+                        try:
+                            import datetime as dt
+                            aba_d = planilha_mestre.worksheet("DESPESAS")
+                            
+                            valor_parcela_base = round(f_val_total / f_parcelas, 2)
+                            novas_linhas = []
+                            
+                            for i in range(f_parcelas):
+                                num_parc = i + 1
+                                
+                                if f_freq == "Mensal (30 dias)": data_v = f_venc_ini + dt.timedelta(days=30 * i)
+                                elif f_freq == "Quinzenal (15 dias)": data_v = f_venc_ini + dt.timedelta(days=15 * i)
+                                else: data_v = f_venc_ini + dt.timedelta(days=7 * i)
+                                
+                                sufixo_parc = f" ({num_parc}/{f_parcelas})" if f_parcelas > 1 else ""
+                                nome_registro = f"[{f_forn.split(' - ')[0]}] {f_desc}{sufixo_parc}" if f_forn != "Avulso (Sem Fornecedor)" else f"{f_desc}{sufixo_parc}"
+                                
+                                if num_parc == f_parcelas: valor_final_parc = f_val_total - (valor_parcela_base * (f_parcelas - 1))
+                                else: valor_final_parc = valor_parcela_base
+                                
+                                if num_parc == 1 and f_status == "Sim (Pago)":
+                                    status_final = "Pago"
+                                    dt_pago = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                                else:
+                                    status_final = "Pendente"
+                                    dt_pago = "-"
+                                
+                                novas_linhas.append([
+                                    datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y"),
+                                    data_v.strftime("%d/%m/%Y"), nome_registro, f_cat, valor_final_parc, status_final, dt_pago, "-"
+                                ])
+                            
+                            for linha in novas_linhas:
+                                aba_d.append_row(linha, value_input_option='RAW')
+                                
+                            st.success(f"✅ {f_parcelas} parcela(s) registrada(s) no cofre!")
+                            st.cache_data.clear(); st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao salvar parcelamento: {e}")
+                    else:
+                        st.warning("Preencha a descrição e um valor maior que zero.")
+
+        with col_baixa:
+            st.write("#### ✅ Quitar Conta (Dar Baixa)")
+            st.info("Aqui você marca como 'Pagas' as contas que estavam pendentes.")
+            
+            if not df_desp.empty:
+                pendentes_baixa = df_desp[df_desp['STATUS_LIMPO'] == 'PENDENTE'].copy()
+                if not pendentes_baixa.empty:
+                    pendentes_baixa['LINHA_SHEETS'] = pendentes_baixa.index + 2 
+                    
+                    lista_baixas = []
+                    dict_linhas = {}
+                    for _, r in pendentes_baixa.iterrows():
+                        texto_item = f"📅 Venc: {r['VENCIMENTO']} | 💰 R$ {r['VALOR_NUM']:,.2f} | 🏭 {r['FORNECEDOR / DESPESA']}"
+                        lista_baixas.append(texto_item)
+                        dict_linhas[texto_item] = r['LINHA_SHEETS']
+                        
+                    conta_selecionada = st.selectbox("Selecione a conta para pagar agora:", ["---"] + lista_baixas)
+                    
+                    if conta_selecionada != "---":
+                        if st.button("Confirmar Pagamento 💵", type="secondary"):
+                            linha_alvo = dict_linhas[conta_selecionada]
+                            try:
+                                aba_d_baixa = planilha_mestre.worksheet("DESPESAS")
+                                aba_d_baixa.update_acell(f"F{linha_alvo}", "Pago")
+                                aba_d_baixa.update_acell(f"G{linha_alvo}", datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y"))
+                                st.success("🎉 Baixa realizada com sucesso!")
+                                st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao dar baixa: {e}")
+                else:
+                    st.write("Nenhuma conta pendente para dar baixa.")
+            else:
+                st.write("Nenhuma despesa cadastrada.")
+
+        # =======================================================
+        # 📜 O HISTÓRICO VISUAL (PARA CONFERÊNCIA RÁPIDA)
+        # =======================================================
+        st.divider()
+        st.write("#### 📜 Histórico de Despesas e Compras")
+        if not df_desp.empty:
+            # Inverte a ordem para mostrar do mais recente para o mais antigo
+            df_hist_view = df_desp.copy().iloc[::-1]
+            
+            # 💡 BLINDAGEM: Puxando as colunas pela posição (0, 1, 2, 3), independente de como foram digitadas na planilha!
+            col_data = df_hist_view.columns[0]
+            col_venc = df_hist_view.columns[1]
+            col_desc = df_hist_view.columns[2]
+            col_cat = df_hist_view.columns[3]
+            
+            colunas_pra_mostrar = [col_data, col_venc, col_desc, col_cat, 'VALOR_NUM', 'STATUS_LIMPO']
+            
+            st.dataframe(
+                df_hist_view[colunas_pra_mostrar],
+                column_config={
+                    col_data: "Lançamento",
+                    col_venc: "Vencimento",
+                    col_desc: "Descrição",
+                    col_cat: "Categoria",
+                    "VALOR_NUM": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
+                    "STATUS_LIMPO": "Status"
+                },
+                use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("Nenhum lançamento registrado no momento.")
+
+        # =======================================================
+        # 🆕 O MÓDULO DE CORREÇÃO DE ERROS (A BORRACHA MÁGICA)
+        # =======================================================
+        st.divider()
+        st.write("#### ✏️ / 🗑️ Gerenciar Lançamentos (Correção de Erros)")
+        st.info("Lançou algo errado ou duplicado? Escolha o registro abaixo para excluir permanentemente do sistema.")
+
+        if not df_desp.empty:
+            ultimas_desp = df_desp.tail(30).copy()
+            ultimas_desp['LINHA_SHEETS'] = ultimas_desp.index + 2
+            ultimas_desp = ultimas_desp.iloc[::-1]
+
+            lista_exclusao = []
+            dict_linhas_ex = {}
+            for _, r in ultimas_desp.iterrows():
+                status_icone = "🟢 PAGO" if r['STATUS_LIMPO'] == 'PAGO' else "🔴 PENDENTE"
+                texto_item = f"[{status_icone}] Registrado em: {r['DATA REGISTRO']} | Venc: {r['VENCIMENTO']} | R$ {r['VALOR_NUM']:,.2f} | {r['FORNECEDOR / DESPESA']}"
+                lista_exclusao.append(texto_item)
+                dict_linhas_ex[texto_item] = r['LINHA_SHEETS']
+
+            conta_excluir = st.selectbox("Selecione o lançamento que deseja EXCLUIR:", ["---"] + lista_exclusao, help="Cuidado! O registro será apagado direto do banco de dados.")
+
+            if conta_excluir != "---":
+                st.error("⚠️ Atenção: Esta ação apagará o registro da planilha e não pode ser desfeita.")
+                if st.button("🗑️ Excluir Registro Permanentemente"):
+                    linha_alvo_ex = dict_linhas_ex[conta_excluir]
+                    try:
+                        aba_d_ex = planilha_mestre.worksheet("DESPESAS")
+                        aba_d_ex.delete_rows(linha_alvo_ex)
+                        st.success("🗑️ Lançamento apagado com sucesso! Os gráficos já foram atualizados.")
+                        st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
+
+    # ------------------------------------------
+    # ABA 3: CADASTRO DE FORNECEDORES
+    # ------------------------------------------
+    with t_fornecedores:
+        with st.form("form_novo_forn", clear_on_submit=True):
+            st.write("#### 🤝 Cadastrar Novo Fornecedor / Fábrica")
+            
+            c_f1, c_f2 = st.columns(2)
+            nome_f = c_f1.text_input("Nome / Razão Social")
+            cat_f = c_f2.text_input("Categoria Principal", placeholder="Ex: Roupas, Embalagens, Sistema...")
+            
+            c_f3, c_f4 = st.columns(2)
+            tel_f = c_f3.text_input("WhatsApp de Contato")
+            pix_f = c_f4.text_input("Chave PIX")
+            
+            obs_f = st.text_input("Observações (Endereço, CNPJ, etc)")
+            
+            if st.form_submit_button("Criar Fornecedor"):
+                if nome_f:
+                    try:
+                        aba_forn = planilha_mestre.worksheet("FORNECEDORES")
+                        dados_forn = aba_forn.get_all_values()
+                        
+                        # Gera o código FORN-001, FORN-002 inteligente
+                        if len(dados_forn) > 1:
+                            ultimo_cod = str(dados_forn[-1][0])
+                            try: prox_num = int(ultimo_cod.replace("FORN-", "")) + 1
+                            except: prox_num = len(dados_forn)
+                        else:
+                            prox_num = 1
+                            
+                        novo_cod_forn = f"FORN-{prox_num:03d}"
+                        
+                        aba_forn.append_row([
+                            novo_cod_forn, nome_f.strip(), cat_f, tel_f, pix_f, obs_f
+                        ], value_input_option='RAW')
+                        
+                        st.success(f"Fábrica cadastrada! Código: {novo_cod_forn}")
+                        st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao cadastrar: {e}")
+                else:
+                    st.warning("O Nome do Fornecedor é obrigatório.")
+        
+        st.divider()
+        st.write("#### 🗂️ Lista de Fornecedores Ativos")
+        if not df_fornecedores.empty:
+            st.dataframe(df_fornecedores, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum fornecedor cadastrado no banco de dados.")
+
+# ==========================================================
+# 📢 MÓDULO DE GESTÃO DE MARKETING (O "TRELLO" DA SWEET HOME)
+# ==========================================================
+elif menu_selecionado == "📢 Gestão de Marketing":
+    st.title("📢 Gestão de Marketing e Conteúdo")
+    st.write("A sua central de comando para alinhar ideias, aprovar artes e dominar as redes sociais.")
+    
+    # Preparação dos Dados
+    df_mkt = df_marketing.copy()
+    if not df_mkt.empty:
+        df_mkt.columns = [str(c).strip().upper() for c in df_mkt.columns]
+    
+    # 📊 DASHBOARD DE MÉTRICAS (VISÃO DO DIRETOR)
+    st.divider()
+    st.write("#### 📊 Visão Geral da Produção")
+    
+    # Cálculo das Métricas
+    total_pedidos = len(df_mkt) if not df_mkt.empty else 0
+    
+    if not df_mkt.empty:
+        em_producao = len(df_mkt[df_mkt['STATUS'].str.contains('Em Produção', case=False, na=False)])
+        falta_postar = len(df_mkt[df_mkt['STATUS'].str.contains('Falta Postar', case=False, na=False)])
+        concluidos = len(df_mkt[df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)])
+    else:
+        em_producao = falta_postar = concluidos = 0
+        
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Fila & Produção", f"{em_producao}", help="Tarefas que o Gestor de Marketing precisa criar/editar.")
+    m2.metric("Aguardando Postagem", f"{falta_postar}", delta="Atenção", delta_color="inverse", help="Artes prontas! Só falta aprovar e colocar no Instagram.")
+    m3.metric("Postados (Sucesso)", f"{concluidos}", delta="Missão Cumprida")
+    m4.metric("Total de Demandas", f"{total_pedidos}")
+    
+    st.divider()
+    
+    # ABAS DE NAVEGAÇÃO DO MARKETING
+    t_nova_tarefa, t_kanban, t_calendario, t_auditoria = st.tabs(["➕ Nova Demanda", "📋 Quadro de Produção", "📅 Agenda", "✅ Vitrine & Auditoria"])
+    
+    # ==========================================
+    # ABA 1: NOVA DEMANDA (ONDE A BIA PEDE)
+    # ==========================================
+    with t_nova_tarefa:
+        st.write("#### 💡 O que precisamos criar hoje?")
+        with st.form("form_novo_marketing", clear_on_submit=True):
+            c1, c2 = st.columns([2, 1])
+            
+            # O Pulo do Gato: Puxar os produtos reais do sistema
+            opcoes_produtos = ["Nenhum / Post Institucional"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
+            f_produto = c1.selectbox("Sobre qual produto é o post?", opcoes_produtos)
+            
+            f_formato = c2.selectbox("Formato desejado", ["📸 Foto para o Feed", "🎬 Reels", "📱 Story", "🛒 Atualizar no Site (Odoo)", "🎨 Outro (Banner, Logo...)"])
+            
+            f_desc = st.text_area("Descrição / Ideia", placeholder="Ex: Fazer um vídeo mostrando a elasticidade do tecido do lençol. Usar música em alta.")
+            
+            c3, c4 = st.columns(2)
+            f_data_agendada = c3.date_input("Para quando precisamos disto? (Prazo/Data do Post)")
+            f_status_inicial = c4.selectbox("Status Atual", ["📥 Fila (Aguardando Início)", "✍️ Em Produção"])
+            
+            if st.form_submit_button("🚀 Lançar Desafio para a Equipa!", type="primary"):
+                if f_desc:
+                    with st.spinner("A registar demanda..."):
+                        try:
+                            import datetime as dt
+                            import pytz
+                            aba_mkt = planilha_mestre.worksheet("MARKETING")
+                            
+                            # Gerador Inteligente de ID (Ex: MKT-001)
+                            if df_mkt.empty:
+                                novo_id = "MKT-001"
+                            else:
+                                ultimo_id = df_mkt['ID_TAREFA'].iloc[-1]
+                                try:
+                                    num = int(ultimo_id.split("-")[1]) + 1
+                                    novo_id = f"MKT-{num:03d}"
+                                except:
+                                    novo_id = f"MKT-{len(df_mkt)+1:03d}"
+                            
+                            data_hoje = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                            data_prazo_str = f_data_agendada.strftime("%d/%m/%Y")
+                            
+                            # A ordem exata da sua planilha (A até I)
+                            linha_mkt = [
+                                novo_id,               # A: ID_TAREFA
+                                data_hoje,             # B: DATA_PEDIDO
+                                f_produto,             # C: PRODUTO_VINCULADO
+                                f_formato,             # D: FORMATO
+                                f_desc,                # E: DESCRIÇÃO
+                                data_prazo_str,        # F: DATA_AGENDADA
+                                f_status_inicial,      # G: STATUS
+                                "-",                   # H: LINK_ARTE (Vazio no início)
+                                "-"                    # I: DATA_CONCLUSAO (Vazio no início)
+                            ]
+                            
+                            aba_mkt.append_row(linha_mkt, value_input_option='RAW')
+                            st.success(f"✅ Tarefa {novo_id} registada com sucesso! O Gestor de Marketing já foi notificado (virtualmente)!")
+                            st.cache_data.clear()
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao registar: {e}")
+                else:
+                    st.warning("Por favor, preencha a descrição da ideia!")
+                    
+    with t_kanban:
+        st.write("### 📋 Quadro de Produção (Kanban)")
+        
+        if not df_mkt.empty:
+            # Criamos as 4 colunas visuais do seu fluxo de trabalho
+            col_fila, col_prod, col_postar, col_done = st.columns(4)
+            
+            # Mapeamento de Status e Cores
+            status_map = [
+                ("📥 Fila (Aguardando Início)", col_fila),
+                ("✍️ Em Produção", col_prod),
+                ("✅ Falta Postar", col_postar),
+                ("🚀 Concluído", col_done)
+            ]
+            
+            for status_nome, coluna_gui in status_map:
+                with coluna_gui:
+                    st.markdown(f"**{status_nome}**")
+                    # Filtra apenas as tarefas desse status
+                    tarefas_status = df_mkt[df_mkt['STATUS'] == status_nome]
+                    
+                    if tarefas_status.empty:
+                        st.caption("Vazio")
+                    
+                    for _, task in tarefas_status.iterrows():
+                        # Cada tarefa vira um card (expander)
+                        with st.expander(f"📍 {task['ID_TAREFA']}", expanded=True):
+                            st.write(f"**{task['FORMATO']}**")
+                            st.caption(f"📅 Prazo: {task['DATA_AGENDADA']}")
+                            st.write(f"<small>{task['DESCRIÇÃO']}</small>", unsafe_allow_html=True)
+                            
+                            # 🔄 Botão para Mover para a próxima etapa
+                            if status_nome != "🚀 Concluído":
+                                fluxo = {
+                                    "📥 Fila (Aguardando Início)": "✍️ Em Produção",
+                                    "✍️ Em Produção": "✅ Falta Postar",
+                                    "✅ Falta Postar": "🚀 Concluído"
+                                }
+                                proximo = fluxo[status_nome]
+                                
+                                if st.button(f"Mover ➡️", key=f"btn_{task['ID_TAREFA']}"):
+                                    try:
+                                        aba_mkt = planilha_mestre.worksheet("MARKETING")
+                                        # Localiza a linha correta (+2 por causa do cabeçalho e índice 0)
+                                        linha_planilha = task.name + 2 
+                                        
+                                        # Atualiza Status no Google Sheets (Coluna G)
+                                        aba_mkt.update_acell(f"G{linha_planilha}", proximo)
+                                        
+                                        # Se finalizou, carimba a data de conclusão (Coluna I)
+                                        if proximo == "🚀 Concluído":
+                                            import datetime as dt
+                                            agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
+                                            aba_mkt.update_acell(f"I{linha_planilha}", agora)
+                                            
+                                        st.toast(f"Tarefa {task['ID_TAREFA']} movida!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao mover card: {e}")
+        else:
+            st.info("Ainda não há demandas de marketing registradas.")
+
+    # ==========================================
+    # ABA 3: CALENDÁRIO / AGENDA DE POSTAGENS
+    # ==========================================
+    with t_calendario:
+        st.write("### 📅 Cronograma de Conteúdo")
+        st.write("Veja o que está programado para ir ao ar nos próximos dias.")
+        
+        if not df_mkt.empty:
+            df_agenda = df_mkt.copy()
+            # Converte a data de texto (DD/MM/YYYY) para data real do Python
+            df_agenda['DATA_DATETIME'] = pd.to_datetime(df_agenda['DATA_AGENDADA'], format='%d/%m/%Y', errors='coerce')
+            df_agenda = df_agenda.dropna(subset=['DATA_DATETIME']).sort_values('DATA_DATETIME')
+            
+            import pytz
+            from datetime import datetime
+            hoje_real = pd.to_datetime(datetime.now(pytz.timezone('America/Sao_Paulo')).strftime('%Y-%m-%d'))
+            
+            # Filtra apenas o que AINDA NÃO FOI POSTADO
+            df_agenda_pendente = df_agenda[~df_agenda['STATUS'].str.contains('Concluído', case=False, na=False)]
+            
+            # 💡 FUNÇÃO CAÇADORA DE IMAGENS: Procura a foto do produto no df_docs
+            def buscar_foto_produto(nome_produto_vinculado):
+                if not df_docs.empty and str(nome_produto_vinculado) != "Nenhum / Post Institucional":
+                    # Filtra documentos que são fotos e têm o vínculo exato com o produto
+                    fotos = df_docs[(df_docs['TIPO'] == "Foto de Produto") & (df_docs['VINCULO'] == str(nome_produto_vinculado))]
+                    if not fotos.empty:
+                        # Pega o link da foto mais recente que foi subida para esse produto
+                        return str(fotos.iloc[-1].get('LINK_DRIVE', ''))
+                return None
+
+            # 💡 FUNÇÃO DESENHISTA: Cria o card visual com ou sem foto
+            def renderizar_card_tarefa(task, titulo_tempo):
+                foto_url = buscar_foto_produto(task['PRODUTO_VINCULADO'])
+                
+                # Se achou a foto no Cloudinary, divide a tela (Foto na esquerda, texto na direita)
+                if foto_url and foto_url.startswith("http"):
+                    c_img, c_txt = st.columns([1, 4])
+                    with c_img:
+                        st.image(foto_url, use_container_width=True)
+                    with c_txt:
+                        st.markdown(f"**{titulo_tempo}** | 📍 {task['ID_TAREFA']} - {task['FORMATO']}<br>📦 **Produto:** {task['PRODUTO_VINCULADO']}<br><small>*{task['DESCRIÇÃO']}*</small><br>Status: **{task['STATUS']}**", unsafe_allow_html=True)
+                else:
+                    # Se não tem foto (ou é post institucional), desenha normal
+                    st.markdown(f"**{titulo_tempo}** | 📍 {task['ID_TAREFA']} - {task['FORMATO']}<br>📦 **Produto:** {task['PRODUTO_VINCULADO']}<br><small>*{task['DESCRIÇÃO']}*</small><br>Status: **{task['STATUS']}**", unsafe_allow_html=True)
+                
+                st.divider()
+
+            if not df_agenda_pendente.empty:
+                atrasados = df_agenda_pendente[df_agenda_pendente['DATA_DATETIME'] < hoje_real]
+                hoje = df_agenda_pendente[df_agenda_pendente['DATA_DATETIME'] == hoje_real]
+                futuro = df_agenda_pendente[df_agenda_pendente['DATA_DATETIME'] > hoje_real]
+                
+                # 🔴 ATRASADOS
+                if not atrasados.empty:
+                    st.error("#### 🔴 Prazos Estourados (Atrasados)")
+                    for _, task in atrasados.iterrows():
+                        renderizar_card_tarefa(task, task['DATA_AGENDADA'])
+                
+                # 🟢 HOJE
+                if not hoje.empty:
+                    st.success("#### 🟢 Vai para o ar HOJE!")
+                    for _, task in hoje.iterrows():
+                        renderizar_card_tarefa(task, "HOJE")
+                
+                # 🔵 PRÓXIMOS DIAS
+                if not futuro.empty:
+                    st.info("#### 🔵 Próximos Dias")
+                    for _, task in futuro.iterrows():
+                        dias_faltam = (task['DATA_DATETIME'] - hoje_real).days
+                        texto_dias = "Amanhã" if dias_faltam == 1 else f"Daqui a {dias_faltam} dias"
+                        renderizar_card_tarefa(task, f"{task['DATA_AGENDADA']} ({texto_dias})")
+            else:
+                st.success("🎉 Nenhuma postagem pendente! A agenda está livre.")
+        else:
+            st.info("Nenhuma demanda cadastrada no sistema.")
+
+    # ==========================================
+    # ABA 4: VITRINE E AUDITORIA (LINKAR O INSTAGRAM)
+    # ==========================================
+    with t_auditoria:
+        st.write("### ✅ Validação de Postagens (Auditoria)")
+        st.write("Postou no Instagram? Cole o link aqui para dar baixa oficial e guardar no histórico!")
+        
+        if not df_mkt.empty:
+            # Filtra o que está em "Falta Postar" ou que já foi "Concluído" mas esqueceu de colocar o link
+            df_pendente_link = df_mkt[
+                (df_mkt['STATUS'].str.contains('Falta Postar', case=False, na=False)) | 
+                ((df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)) & (df_mkt['LINK_ARTE'] == "-"))
+            ].copy()
+            
+            # --- FORMULÁRIO RÁPIDO PARA A BIA DAR BAIXA ---
+            with st.container(border=True):
+                st.markdown("#### 🔗 Vincular Link do Instagram")
+                
+                # 💡 A CORREÇÃO: Só abrimos o form se houver algo pendente!
+                if not df_pendente_link.empty:
+                    with st.form("form_link_insta", clear_on_submit=True):
+                        opcoes_baixa = [f"📍 {r['ID_TAREFA']} - {r['FORMATO']} ({r['PRODUTO_VINCULADO']})" for _, r in df_pendente_link.iterrows()]
+                        tarefa_selecionada = st.selectbox("Selecione a tarefa que acabou de ser postada:", opcoes_baixa)
+                        link_post = st.text_input("Cole o Link do Instagram aqui 🌐", placeholder="Ex: https://www.instagram.com/p/...")
+                        
+                        if st.form_submit_button("Validar e Concluir 🚀", type="primary"):
+                            if link_post and "http" in link_post:
+                                with st.spinner("Registrando o sucesso..."):
+                                    try:
+                                        aba_mkt = planilha_mestre.worksheet("MARKETING")
+                                        id_alvo = tarefa_selecionada.split(" - ")[0].replace("📍 ", "")
+                                        
+                                        # Acha a linha correta na planilha
+                                        linha_planilha = df_mkt[df_mkt['ID_TAREFA'] == id_alvo].index[0] + 2
+                                        
+                                        import datetime as dt
+                                        import pytz
+                                        agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
+                                        
+                                        # Atualiza Status, Link e Data de Conclusão!
+                                        aba_mkt.update_acell(f"G{linha_planilha}", "🚀 Concluído") # Coluna G: Status
+                                        aba_mkt.update_acell(f"H{linha_planilha}", link_post)     # Coluna H: Link
+                                        aba_mkt.update_acell(f"I{linha_planilha}", agora)         # Coluna I: Data Conclusão
+                                        
+                                        st.success("✅ Arte validada! Link salvo e métricas de tempo atualizadas.")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao salvar o link: {e}")
+                            else:
+                                st.warning("Por favor, cole um link válido (que comece com http).")
+                else:
+                    # 💡 MENSAGEM MOVIDA PARA FORA DO FORM
+                    st.success("Tudo em dia! Não há tarefas aguardando link de postagem no momento.")
+            
+            st.divider()
+            
+            # --- TABELA DE HISTÓRICO (A VITRINE DEFINITIVA) ---
+            st.write("#### 🏆 Histórico de Sucesso (Portfólio)")
+            df_concluidos = df_mkt[df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)].copy()
+            
+            if not df_concluidos.empty:
+                colunas_mostrar = ['DATA_CONCLUSAO', 'ID_TAREFA', 'PRODUTO_VINCULADO', 'FORMATO', 'LINK_ARTE']
+                df_view = df_concluidos[colunas_mostrar].copy()
+                df_view = df_view.iloc[::-1]
+                
+                st.dataframe(
+                    df_view,
+                    column_config={
+                        "DATA_CONCLUSAO": "Finalizado em",
+                        "ID_TAREFA": "Código",
+                        "PRODUTO_VINCULADO": "Produto",
+                        "FORMATO": "Formato",
+                        "LINK_ARTE": st.column_config.LinkColumn("Link do Post (Ver)")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("O histórico de postagens aparecerá aqui assim que o primeiro link for salvo.")
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
