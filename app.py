@@ -871,11 +871,16 @@ elif menu_selecionado == "💰 Financeiro":
                 saldo_devedor = df_fin['SALDO_NUM'].sum()
                 total_recebido = vendas_brutas - saldo_devedor
                 
-                # Cálculo de Liquidez
-                receita_imediata = df_fin[df_fin['FORMA_PG'] != 'Sweet Flex']['VALOR_NUM'].sum()
+                # 🛡️ PENTE FINO NA LIQUIDEZ: Garante que "Sweet flex", "FLEX" ou "Sweet Flex" fiquem de fora da receita à vista
+                receita_imediata = df_fin[~df_fin['FORMA_PG'].astype(str).str.upper().str.contains('FLEX')]['VALOR_NUM'].sum()
                 indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
+                
+                # 🔍 CÁLCULO DA PROVA REAL (Para mostrar a separação)
+                df_retiradas['SALDO_SOCIA'] = df_retiradas['SALDO DEVEDOR'].apply(limpar_v)
+                saldo_socia = df_retiradas['SALDO_SOCIA'].sum()
+                saldo_total_planilha = saldo_devedor + saldo_socia
             else:
-                vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = 0.0
+                vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = saldo_socia = saldo_total_planilha = 0.0
             
             # 2. MÉTRICAS PRINCIPAIS (AGORA SÓ COM VENDAS REAIS)
             c1, c2, c3, c4 = st.columns(4)
@@ -883,6 +888,9 @@ elif menu_selecionado == "💰 Financeiro":
             c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}", help="Lucro projetado dessas vendas (Valor Total de Venda cobrado menos o Custo de Fábrica dos produtos).")
             c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro em Caixa", help="Capital que já entrou de fato no caixa da loja (Pix, Dinheiro, Cartão ou parcelas do Flex que já foram pagas).")
             c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", delta=f"{(saldo_devedor/vendas_brutas*100):.1f}% pendente" if vendas_brutas > 0 else "0%", delta_color="inverse", help="Montante que está 'na rua', aguardando o pagamento das faturas em aberto pelas clientes.")
+            
+            # 💡 LINHA DO "PENTE FINO" NA TELA (Isso vai tranquilizar você e a Bia)
+            st.caption(f"🕵️‍♂️ **Raio-X do Filtro:** A planilha bruta possui **R$ {saldo_total_planilha:,.2f}** de dívida total. O sistema isolou **R$ {saldo_socia:,.2f}** (retiradas da sócia) para o *Banco Sweet* e exibe nas métricas acima apenas a dívida real de clientes (**R$ {saldo_devedor:,.2f}**).") help="Montante que está 'na rua', aguardando o pagamento das faturas em aberto pelas clientes.")
 
             # 3. TERMÔMETRO DE SAÚDE FINANCEIRA
             st.markdown("---")
@@ -2298,6 +2306,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
