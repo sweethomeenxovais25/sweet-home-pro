@@ -815,39 +815,63 @@ elif menu_selecionado == "💰 Financeiro":
             df_fin_total = df_vendas_hist.copy()
             
             # ========================================================
-            # 🛑 O FILTRO DE GOVERNANÇA (SEPARAÇÃO SÓCIOS vs CLIENTES)
+            # 🛑 O FILTRO DE GOVERNANÇA DINÂMICO (SEM NOMES FIXOS)
             # ========================================================
             try:
+                # 1. Puxa todos os nomes da aba SOCIOS, convertendo para minúsculo e sem espaços
                 if not df_socios.empty:
-                    nomes_socios = df_socios['NOME'].astype(str).str.strip().tolist()
+                    nomes_socios_limpos = df_socios['NOME'].astype(str).str.strip().str.lower().tolist()
                 else:
-                    nomes_socios = ["Beatriz Anselmo"] # Fallback de segurança se a aba estiver vazia
+                    nomes_socios_limpos = []
             except:
-                nomes_socios = ["Beatriz Anselmo"]
+                nomes_socios_limpos = []
+
+            # 2. Puxa do Banco de Clientes (CRM) os Códigos (CLI-XXX) que pertencem a esses sócios
+            codigos_dos_socios = []
+            if nomes_socios_limpos:
+                for cod, dados in banco_de_clientes.items():
+                    if str(dados['nome']).strip().lower() in nomes_socios_limpos:
+                        codigos_dos_socios.append(str(cod).strip().lower())
+
+            # 3. Limpa as colunas de Vendas pelo NOME DA COLUNA (Tirando a venda dos olhos do robô)
+            nomes_vendas = df_fin_total['CLIENTE'].astype(str).str.strip().str.lower()
             
-            # Cria a máscara: É sócio? (Verifica se o nome na Coluna D (3) está na lista de sócios)
-            mascara_socios = df_fin_total.iloc[:, 3].astype(str).str.strip().isin(nomes_socios)
-            
-            # df_fin = VENDAS REAIS (Exclui os sócios)
+            # Prevenção: Busca a coluna de código pelo nome, para não errar a posição
+            if 'CÓD. CLIENTE' in df_fin_total.columns:
+                codigos_vendas = df_fin_total['CÓD. CLIENTE'].astype(str).str.split('.').str[0].str.strip().str.lower()
+            else:
+                codigos_vendas = df_fin_total.iloc[:, 2].astype(str).str.split('.').str[0].str.strip().str.lower()
+
+            # 4. A MÁSCARA: É sócio se o NOME bater OU se o CÓDIGO bater. Totalmente automático!
+            mascara_socios = nomes_vendas.isin(nomes_socios_limpos) | codigos_vendas.isin(codigos_dos_socios)
+
+            # df_fin = VENDAS REAIS (Exclui os sócios para os Gráficos e Saldo Geral)
             df_fin = df_fin_total[~mascara_socios].copy()
-            
-            # df_retiradas = PRODUTOS RETIRADOS PELOS SÓCIOS
+
+            # df_retiradas = PRODUTOS RETIRADOS (Vai direto para o Banco Sweet)
             df_retiradas = df_fin_total[mascara_socios].copy()
             # ========================================================
             
             if not df_fin.empty:
-                # Mapeamento: Coluna L (11)=Total | M (12)=Lucro | O (14)=Pagto | U (20)=Saldo
-                df_fin['VALOR_NUM'] = df_fin.iloc[:, 11].apply(limpar_v)
-                df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v)
-                df_fin['FORMA_PG'] = df_fin.iloc[:, 14]
-                df_fin['SALDO_NUM'] = df_fin.iloc[:, 20].apply(limpar_v)
+                # 💡 A MÁGICA: Busca pelo NOME do cabeçalho que você me passou, não pela posição!
+                df_fin['VALOR_NUM'] = df_fin['TOTAL R$'].apply(limpar_v)
+                df_fin['FORMA_PG'] = df_fin['FORMA DE PAGAMENTO']
+                df_fin['SALDO_NUM'] = df_fin['SALDO DEVEDOR'].apply(limpar_v)
+                
+                # Para o lucro, vamos garantir que ele ache a coluna certa também
+                if 'LUCRO' in df_fin.columns:
+                    df_fin['LUCRO_NUM'] = df_fin['LUCRO'].apply(limpar_v)
+                elif 'LUCRO R$' in df_fin.columns:
+                    df_fin['LUCRO_NUM'] = df_fin['LUCRO R$'].apply(limpar_v)
+                else:
+                    df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v) # Fallback
                 
                 vendas_brutas = df_fin['VALOR_NUM'].sum()
                 lucro_bruto = df_fin['LUCRO_NUM'].sum()
                 saldo_devedor = df_fin['SALDO_NUM'].sum()
                 total_recebido = vendas_brutas - saldo_devedor
                 
-                # Cálculo de Liquidez (O que já é dinheiro vivo vs. o que é Flex)
+                # Cálculo de Liquidez
                 receita_imediata = df_fin[df_fin['FORMA_PG'] != 'Sweet Flex']['VALOR_NUM'].sum()
                 indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
             else:
@@ -1057,7 +1081,8 @@ elif menu_selecionado == "💰 Financeiro":
                 DATA_CORTE_LEGADO = pd.to_datetime("2026-02-01")
                 
                 # --- 1. HIGIENIZAÇÃO DE DADOS ---
-                df_cobranca = df_vendas_hist.copy()
+                # A MÁGICA AQUI: Puxa o df_fin (sem sócios) no lugar do histórico bruto
+                df_cobranca = df_fin.copy()
                 df_cobranca['SALDO_NUM'] = df_cobranca['SALDO DEVEDOR'].apply(limpar_v)
                 
                 # 🛑 Trava de Status para não cobrar quem já pagou
@@ -2273,6 +2298,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
