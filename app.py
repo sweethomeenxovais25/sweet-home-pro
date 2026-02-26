@@ -253,10 +253,11 @@ def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
         st.error(f"Erro no servidor de arquivos: {e}")
         return None, None
 
-@st.cache_data(ttl=60) # Reduzir para 60 ajuda a manter o estoque mais fresco
+@st.cache_data(ttl=60)
 def carregar_dados():
+    # 💡 CORREÇÃO 1: Se falhar, agora ele retorna as 14 variáveis certinhas para não quebrar o app
     if not planilha_mestre: 
-        return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
     def ler_aba_seguro(nome):
         try:
@@ -2840,6 +2841,7 @@ elif menu_selecionado == "🏭 Compras e Despesas":
                 st.info("O histórico de postagens aparecerá aqui assim que o primeiro link for salvo.")
 
         
+
 
 
 
