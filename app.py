@@ -279,15 +279,18 @@ def carregar_dados():
     # 💡 AQUI ESTÁ O SEGREDO: Puxando as novas abas
     df_socios = ler_aba_seguro("SOCIOS")
     df_aportes = ler_aba_seguro("APORTES")
+    df_fornecedores = ler_aba_seguro("FORNECEDORES")
+    df_despesas = ler_aba_seguro("DESPESAS")
+    df_docs = ler_aba_seguro("DOCUMENTOS")
 
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
 
-    # 💡 AJUSTE 1: O return TEM que devolver as duas abas novas no final
-    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes
+    # 💡 AJUSTE 2: O return TEM que devolver as duas abas novas no final
+    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas
 
-# 💡 AJUSTE 2: A variável que recebe os dados TEM que ter os nomes das duas abas novas no final
-banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes = carregar_dados()
+# Variáveis que recebem os dados (Atualizado)
+banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes, df_docs, banco_de_fornecedores, df_fornecedores, df_despesas = carregar_dados()
 
 with st.sidebar:
     try:
@@ -306,7 +309,7 @@ with st.sidebar:
     
     menu_selecionado = st.radio(
         "Navegação",
-        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos"], 
+        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos", "🏭 Compras e Despesas"], 
         key="navegacao_principal_sweet"
     )
     
@@ -879,18 +882,38 @@ elif menu_selecionado == "💰 Financeiro":
                 saldo_devedor = df_fin['SALDO_NUM'].sum()
                 total_recebido = vendas_brutas - saldo_devedor
                 
-                # Cálculo de Liquidez (Garante que letras maiusculas no flex não enganem o caixa)
+                # Cálculo de Liquidez
                 receita_imediata = df_fin[~df_fin['FORMA_PG'].astype(str).str.upper().str.contains('FLEX')]['VALOR_NUM'].sum()
                 indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
+                
+                # ========================================================
+                # 🆕 INTEGRAÇÃO ERP: Calculando as saídas reais para o Lucro Líquido (DRE)
+                # ========================================================
+                if not df_despesas.empty:
+                    # Busca segura das colunas da aba de Despesas
+                    col_status_d = 'STATUS' if 'STATUS' in df_despesas.columns else df_despesas.columns[5]
+                    col_valor_d = 'VALOR R$' if 'VALOR R$' in df_despesas.columns else df_despesas.columns[4]
+                    
+                    # Filtra apenas o que já saiu do caixa de verdade (PAGO)
+                    df_desp_pagas = df_despesas[df_despesas[col_status_d].astype(str).str.strip().str.upper() == 'PAGO'].copy()
+                    total_despesas_pagas = df_desp_pagas[col_valor_d].apply(limpar_v).sum() if not df_desp_pagas.empty else 0.0
+                else:
+                    total_despesas_pagas = 0.0
+                
+                # A mágica final: Lucro Bruto menos as Despesas Fixas/Operacionais
+                lucro_liquido = lucro_bruto - total_despesas_pagas
+                # ========================================================
+
             else:
-                vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = 0.0
+                vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = total_despesas_pagas = lucro_liquido = 0.0
             
-            # 2. MÉTRICAS PRINCIPAIS (AGORA SÓ COM VENDAS REAIS)
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}", help="Soma de todas as vendas reais registradas para clientes (já excluindo as retiradas dos sócios).")
-            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}", help="Lucro projetado dessas vendas (Valor Total de Venda cobrado menos o Custo de Fábrica dos produtos).")
-            c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro em Caixa", help="Capital que já entrou de fato no caixa da loja (Pix, Dinheiro, Cartão ou parcelas do Flex que já foram pagas).")
-            c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", delta=f"{(saldo_devedor/vendas_brutas*100):.1f}% pendente" if vendas_brutas > 0 else "0%", delta_color="inverse", help="Montante que está 'na rua', aguardando o pagamento das faturas em aberto pelas clientes.")
+            # 2. MÉTRICAS PRINCIPAIS (AGORA SÃO 5 COLUNAS COM DRE INTEGRADO)
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}", help="Soma de todas as vendas reais registradas para clientes.")
+            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}", help="Valor Total cobrado menos o Custo de Fábrica dos produtos.")
+            c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro em Caixa")
+            c4.metric("Saídas (Despesas)", f"R$ {total_despesas_pagas:,.2f}", delta="Contas Pagas", delta_color="inverse", help="Total de despesas, insumos e contas fixas já quitadas no módulo de Compras.")
+            c5.metric("Lucro Líquido", f"R$ {lucro_liquido:,.2f}", delta="Resultado Real", help="O que sobrou de fato para a empresa: Lucro Bruto menos as Saídas (Despesas).")
 
             # 3. TERMÔMETRO DE SAÚDE FINANCEIRA
             st.markdown("---")
@@ -2215,24 +2238,32 @@ elif menu_selecionado == "📂 Documentos":
     st.divider()
     st.write("### 📤 Enviar Arquivo")
     
-    lista_categorias = ["Foto de Produto", "Nota Fiscal", "Comprovante", "Recibo / Pgto", "Contrato", "Outros"]
+    # 1. 🆕 Expandimos e organizamos as categorias para o mundo ERP
+    lista_categorias = ["Foto de Produto", "Comprovante Cliente", "Recibo / Pgto Cliente", "Nota Fiscal (Fornecedor)", "Boleto / Despesa", "Contrato", "Outros"]
     cat_escolhida = st.selectbox("1️⃣ Categoria do Documento", lista_categorias)
     
     with st.form("form_upload_cloudinary", clear_on_submit=True):
         st.write("2️⃣ **Detalhes e Arquivo**")
         vinc_cli = "Nenhum"
         vinc_prod = "Nenhum"
+        vinc_forn = "Nenhum" # 🆕 Nova variável para o Fornecedor
         nome_livre = ""
         
-        if cat_escolhida in ["Foto de Produto", "Nota Fiscal"]:
+        if cat_escolhida == "Foto de Produto":
             st.info("📦 O sistema dará o nome do arquivo automaticamente com base no produto.")
             opcoes_prod = ["Nenhum"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
             vinc_prod = st.selectbox("Selecione o Produto:", opcoes_prod)
         
-        elif cat_escolhida in ["Comprovante", "Recibo / Pgto"]:
-            st.info("👤 O sistema dará o nome do arquivo automaticamente com base na cliente.")
+        elif cat_escolhida in ["Comprovante Cliente", "Recibo / Pgto Cliente"]:
+            st.info("👤 O sistema vinculará este documento à cliente correspondente.")
             opcoes_cli = ["Nenhum"] + [f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()]
             vinc_cli = st.selectbox("Selecione a Cliente:", opcoes_cli)
+            
+        # 🆕 A GRANDE MÁGICA: Conectando com a base contábil
+        elif cat_escolhida in ["Nota Fiscal (Fornecedor)", "Boleto / Despesa"]:
+            st.info("🏭 O sistema vinculará este documento ao Fornecedor correspondente.")
+            opcoes_forn = ["Nenhum"] + [f"{k} - {v['nome']}" for k, v in banco_de_fornecedores.items()]
+            vinc_forn = st.selectbox("Selecione o Fornecedor:", opcoes_forn)
         
         else:
             nome_livre = st.text_input("Nome ou Descrição Breve", help="Exemplo: Conta de Luz Janeiro")
@@ -2243,20 +2274,26 @@ elif menu_selecionado == "📂 Documentos":
             erro = False
             if not arquivo_subido:
                 st.error("⚠️ Você esqueceu de anexar o arquivo!"); erro = True
-            elif cat_escolhida in ["Foto de Produto", "Nota Fiscal"] and vinc_prod == "Nenhum":
+            elif cat_escolhida == "Foto de Produto" and vinc_prod == "Nenhum":
                 st.error("⚠️ Selecione um produto."); erro = True
-            elif cat_escolhida in ["Comprovante", "Recibo / Pgto"] and vinc_cli == "Nenhum":
+            elif cat_escolhida in ["Comprovante Cliente", "Recibo / Pgto Cliente"] and vinc_cli == "Nenhum":
                 st.error("⚠️ Selecione uma cliente."); erro = True
+            elif cat_escolhida in ["Nota Fiscal (Fornecedor)", "Boleto / Despesa"] and vinc_forn == "Nenhum":
+                st.error("⚠️ Selecione um fornecedor."); erro = True
             elif cat_escolhida in ["Contrato", "Outros"] and not nome_livre:
                 st.error("⚠️ Digite um nome para o documento."); erro = True
 
             if not erro:
+                # ⚙️ Lógica de Nomenclatura Dinâmica
                 if vinc_prod != "Nenhum":
                     nome_gerado = f"[{cat_escolhida.upper()}] {vinc_prod}"
                     vinculo_final = vinc_prod
                 elif vinc_cli != "Nenhum":
                     nome_gerado = f"[{cat_escolhida.upper()}] {vinc_cli}"
                     vinculo_final = vinc_cli
+                elif vinc_forn != "Nenhum": # 🆕 Regra do Fornecedor adicionada
+                    nome_gerado = f"[{cat_escolhida.upper()}] {vinc_forn}"
+                    vinculo_final = vinc_forn
                 else:
                     nome_gerado = f"[{cat_escolhida.upper()}] {nome_livre}"
                     vinculo_final = "-"
@@ -2264,48 +2301,445 @@ elif menu_selecionado == "📂 Documentos":
                 nome_limpo = nome_gerado.replace("/", "-").replace(":", "")
 
                 with st.spinner(f"Subindo para o servidor seguro... ⏳"):
+                    # 1. Tenta fazer o upload para o Cloudinary
                     f_id, f_link = upload_para_cloudinary(arquivo_subido.getvalue(), nome_limpo, cat_escolhida)
                     
+                    # 2. Só grava na planilha SE o upload realmente funcionou
                     if f_id:
                         try:
+                            import pytz
+                            from datetime import datetime
+                            
                             aba_doc = planilha_mestre.worksheet("DOCUMENTOS")
+                            
+                            # Se a aba estiver totalmente limpa (sem cabeçalho), ele cria na hora
                             if len(aba_doc.get_all_values()) == 0:
                                 aba_doc.append_row(["DATA", "TIPO", "NOME", "ID_ARQUIVO", "LINK_DRIVE", "VINCULO", "STATUS_ODOO"])
                             
                             status_odoo = "Pronto para Site" if cat_escolhida == "Foto de Produto" else "-"
                             
-                            aba_doc.append_row([
-                                datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                cat_escolhida, nome_limpo, f_id, f_link, vinculo_final, status_odoo
-                            ], value_input_option='USER_ENTERED')
-                            st.success(f"✅ Arquivado com sucesso!"); st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                            # Monta a linha exata (A até G)
+                            linha_nova = [
+                                datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M"),
+                                cat_escolhida, 
+                                nome_limpo, 
+                                f_id, 
+                                f_link, 
+                                vinculo_final, 
+                                status_odoo
+                            ]
+                            
+                            # 💡 A MÁGICA: O robô olha os dados REAIS da Coluna A (Data) e acha a linha exata
+                            valores_coluna_a = aba_doc.col_values(1)
+                            
+                            # Tira os espaços em branco perdidos no meio do caminho
+                            linhas_preenchidas = [v for v in valores_coluna_a if str(v).strip() != ""]
+                            proxima_linha_vazia = len(linhas_preenchidas) + 1
+                            
+                            # Injeta a linha forçadamente no lugar exato, empurrando a planilha
+                            aba_doc.insert_row(linha_nova, index=proxima_linha_vazia, value_input_option='RAW')
+                            
+                            st.success(f"✅ Arquivado com sucesso no Cofre e na Planilha!")
+                            st.cache_data.clear()
+                            st.cache_resource.clear()
+                            st.rerun()
+                            
                         except Exception as e: 
-                            st.error(f"Erro na planilha: {e}")
+                            st.error(f"❌ Erro ao escrever na planilha do Google: {e}")
+                    else:
+                        # 💡 ALERTA NOVO: Se o Cloudinary falhar, agora ele te avisa e não deixa você no escuro!
+                        st.error("❌ Falha no upload da imagem/PDF. O sistema cancelou o registro para não gerar dados órfãos na planilha.")
 
     st.divider()
     st.write("### 🗂️ Histórico Geral de Documentos")
     
     if not df_docs.empty:
-        categorias_existentes = ["Tudo"] + sorted(df_docs['TIPO'].unique().tolist())
-        filtro_cat = st.selectbox("Filtrar por Categoria:", categorias_existentes)
-        
-        df_filtrado = df_docs.copy()
-        if filtro_cat != "Tudo":
-            df_filtrado = df_filtrado[df_filtrado['TIPO'] == filtro_cat]
-            
-        busca_doc = st.text_input("🔍 Pesquisar por Nome ou Código...")
-        if busca_doc:
-            df_filtrado = df_filtrado[df_filtrado.apply(lambda r: busca_doc.lower() in str(r).lower(), axis=1)]
+        # 💡 CORREÇÃO 1: Limpeza profunda (Extermina a "categoria fantasma" em branco)
+        df_docs['TIPO'] = df_docs['TIPO'].astype(str).str.strip() # Remove espaços acidentais
+        df_docs_limpo = df_docs[(df_docs['TIPO'] != "") & (df_docs['TIPO'].str.lower() != "nan")].copy()
 
-        for _, r in df_filtrado.sort_index(ascending=False).head(10).iterrows():
-            with st.container():
-                col_a, col_b, col_c = st.columns([1, 3, 1])
-                col_a.write(f"📅 {str(r['DATA']).split(' ')[0]}")
-                col_b.write(f"**{r['TIPO']}**\n\n<small>{r['NOME']}</small>", unsafe_allow_html=True)
-                col_c.link_button("👁️ Abrir", r['LINK_DRIVE'], use_container_width=True)
-                st.divider()
+        if not df_docs_limpo.empty:
+            categorias_existentes = ["Tudo"] + sorted(df_docs_limpo['TIPO'].unique().tolist())
+            filtro_cat = st.selectbox("Filtrar por Categoria:", categorias_existentes)
+            
+            df_filtrado = df_docs_limpo.copy()
+            if filtro_cat != "Tudo":
+                df_filtrado = df_filtrado[df_filtrado['TIPO'] == filtro_cat]
+                
+            busca_doc = st.text_input("🔍 Pesquisar por Nome ou Código...")
+            if busca_doc:
+                df_filtrado = df_filtrado[df_filtrado.apply(lambda r: busca_doc.lower() in str(r).lower(), axis=1)]
+
+            # 💡 CORREÇÃO 2: Removendo o gargalo! Aumentei de 10 para 50 arquivos (ou o número que quiser)
+            docs_para_mostrar = df_filtrado.sort_index(ascending=False).head(50)
+            
+            st.caption(f"Mostrando {len(docs_para_mostrar)} documento(s) encontrados.")
+
+            for _, r in docs_para_mostrar.iterrows():
+                with st.container():
+                    col_a, col_b, col_c = st.columns([1, 3, 1])
+                    col_a.write(f"📅 {str(r['DATA']).split(' ')[0]}")
+                    col_b.write(f"**{r['TIPO']}**\n\n<small>{r['NOME']}</small>", unsafe_allow_html=True)
+                    col_c.link_button("👁️ Abrir", str(r.get('LINK_DRIVE', '')), use_container_width=True)
+                    st.divider()
+        else:
+            st.info("Nenhum documento válido encontrado na base.")
     else:
         st.info("O cofre geral está vazio.")
+
+    # =======================================================
+    # 🆕 O MÓDULO DE CORREÇÃO DE ERROS (DESTRUIÇÃO TOTAL: PLANILHA + CLOUDINARY)
+    # =======================================================
+    st.divider()
+    st.write("#### ✏️ / 🗑️ Gerenciar Arquivos (Correção de Erros)")
+    st.info("Subiu o arquivo errado ou duplicado? Escolha o documento abaixo para excluí-lo definitivamente do sistema e da nuvem.")
+
+    if not df_docs.empty:
+        ultimos_docs = df_docs.tail(30).copy()
+        ultimos_docs['LINHA_SHEETS'] = ultimos_docs.index + 2
+        ultimos_docs = ultimos_docs.iloc[::-1]
+
+        lista_exclusao_doc = []
+        dict_dados_ex_doc = {}
+        
+        for _, r in ultimos_docs.iterrows():
+            data_doc = str(r.get('DATA', '')).split(' ')[0]
+            tipo_doc = str(r.get('TIPO', ''))
+            nome_doc = str(r.get('NOME', ''))
+            id_cloud_doc = str(r.get('ID_ARQUIVO', '')) 
+            
+            texto_item = f"📅 {data_doc} | 📂 {tipo_doc} | 📄 {nome_doc}"
+            lista_exclusao_doc.append(texto_item)
+            
+            dict_dados_ex_doc[texto_item] = {
+                'linha': r['LINHA_SHEETS'],
+                'id_cloud': id_cloud_doc
+            }
+
+        doc_excluir = st.selectbox("Selecione o documento que deseja EXCLUIR:", ["---"] + lista_exclusao_doc)
+
+        if doc_excluir != "---":
+            st.error("⚠️ Atenção: Esta ação apagará o arquivo físico da nuvem e a linha da planilha permanentemente.")
+            if st.button("🗑️ Destruir Documento Totalmente"):
+                
+                dados_alvo = dict_dados_ex_doc[doc_excluir]
+                linha_alvo_ex = dados_alvo['linha']
+                id_alvo_ex = dados_alvo['id_cloud']
+                
+                with st.spinner("Apagando da nuvem e do sistema... ⏳"):
+                    try:
+                        # 1️⃣ PRIMEIRO: Manda o Cloudinary destruir o arquivo físico
+                        if id_alvo_ex and str(id_alvo_ex).lower() not in ["nan", "", "none"]:
+                            import cloudinary.uploader
+                            try:
+                                cloudinary.uploader.destroy(id_alvo_ex)
+                            except Exception as cloud_err:
+                                st.warning(f"O arquivo já não estava no Cloudinary ou houve falha na nuvem: {cloud_err}")
+
+                        # 2️⃣ SEGUNDO: Apaga a linha do Google Sheets
+                        aba_doc_ex = planilha_mestre.worksheet("DOCUMENTOS")
+                        aba_doc_ex.delete_rows(linha_alvo_ex)
+                        
+                        st.success("🗑️ Documento apagado com sucesso do Cloudinary E da base de dados!")
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Erro ao excluir o documento: {e}")
+
+# ==========================================
+# --- SEÇÃO 3: COMPRAS E DESPESAS (CONTÁBIL) ---
+# ==========================================
+elif menu_selecionado == "🏭 Compras e Despesas":
+    st.markdown("### 🏭 Gestão de Compras e Contas a Pagar")
+    st.write("Controle de fornecedores, pagamentos de estoque e despesas fixas da loja.")
+
+    # 1. Preparação dos Dados
+    df_desp = df_despesas.copy()
+    if not df_desp.empty:
+        df_desp.columns = [c.strip().upper() for c in df_desp.columns]
+        # Garante que vai achar a coluna de valor
+        col_valor = 'VALOR R$' if 'VALOR R$' in df_desp.columns else df_desp.columns[4]
+        df_desp['VALOR_NUM'] = df_desp[col_valor].apply(limpar_v)
+        df_desp['STATUS_LIMPO'] = df_desp.get('STATUS', pd.Series(dtype=str)).astype(str).str.strip().str.upper()
+    else:
+        df_desp['VALOR_NUM'] = 0.0
+        df_desp['STATUS_LIMPO'] = ""
+
+    t_dash, t_despesas, t_fornecedores = st.tabs(["📊 Dashboard Contábil", "💸 Lançar e Pagar Contas", "🏭 Fornecedores"])
+
+    # ------------------------------------------
+    # ABA 1: DASHBOARD
+    # ------------------------------------------
+    with t_dash:
+        if not df_desp.empty:
+            pendentes = df_desp[df_desp['STATUS_LIMPO'] == 'PENDENTE']
+            pagos = df_desp[df_desp['STATUS_LIMPO'] == 'PAGO']
+
+            total_pendente = pendentes['VALOR_NUM'].sum() if not pendentes.empty else 0.0
+            total_pago = pagos['VALOR_NUM'].sum() if not pagos.empty else 0.0
+
+            c1, c2 = st.columns(2)
+            c1.metric("🔴 Contas a Pagar (Pendentes)", f"R$ {total_pendente:,.2f}", help="Tudo que já foi registrado mas ainda não foi pago.")
+            c2.metric("🟢 Despesas Pagas (Histórico)", f"R$ {total_pago:,.2f}", help="Total de saídas de caixa já quitadas.")
+
+            st.divider()
+            
+            col_graf, col_lista = st.columns([1.5, 1])
+            with col_graf:
+                st.write("#### Onde o dinheiro está sendo investido?")
+                if not pagos.empty:
+                    import plotly.express as px
+                    gastos_cat = pagos.groupby('CATEGORIA')['VALOR_NUM'].sum().reset_index()
+                    fig_desp = px.pie(gastos_cat, values='VALOR_NUM', names='CATEGORIA', hole=0.4, 
+                                      color_discrete_sequence=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0'])
+                    fig_desp.update_traces(textposition='inside', textinfo='percent+label')
+                    fig_desp.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False)
+                    st.plotly_chart(fig_desp, use_container_width=True)
+                else:
+                    st.info("Nenhuma despesa paga registrada ainda para gerar o gráfico.")
+
+            with col_lista:
+                st.write("#### 🚨 Próximos Vencimentos")
+                if not pendentes.empty:
+                    # Ordena pelos vencimentos mais próximos
+                    pend_show = pendentes.copy()
+                    pend_show['VENC_DT'] = pd.to_datetime(pend_show['VENCIMENTO'], format='%d/%m/%Y', errors='coerce')
+                    pend_show = pend_show.sort_values('VENC_DT')
+                    
+                    for _, row in pend_show.head(5).iterrows():
+                        st.error(f"📅 **{row['VENCIMENTO']}**\n\n🏭 {row['FORNECEDOR / DESPESA']}\n\n💰 R$ {row['VALOR_NUM']:,.2f}")
+                else:
+                    st.success("Tudo em dia! Nenhuma conta pendente no momento.")
+        else:
+            st.info("Aguardando o primeiro lançamento de despesa para gerar o Dashboard.")
+
+    # ------------------------------------------
+    # ABA 2: LANÇAMENTOS E BAIXAS (COM HISTÓRICO E EXCLUSÃO)
+    # ------------------------------------------
+    with t_despesas:
+        col_nova, col_baixa = st.columns(2)
+        
+        with col_nova:
+            st.write("#### ➕ Nova Despesa / Compra")
+            with st.form("form_nova_despesa", clear_on_submit=True):
+                # Puxa os fornecedores ou permite avulso
+                opcoes_forn = ["Avulso (Sem Fornecedor)"] + [f"{k} - {v['nome']}" for k,v in banco_de_fornecedores.items()]
+                f_forn = st.selectbox("Quem estamos pagando?", opcoes_forn)
+                
+                f_desc = st.text_input("Descrição da Compra", placeholder="Ex: Fatura Tecidos, Conta de Luz...")
+                f_cat = st.selectbox("Categoria", ["Estoque / Mercadorias", "Logística / Fretes", "Insumos / Embalagens", "Despesas Fixas", "Marketing", "Outros"])
+                
+                c_v, c_d = st.columns(2)
+                f_val_total = c_v.number_input("Valor TOTAL (R$)", min_value=0.0, format="%.2f")
+                f_venc_ini = c_d.date_input("Vencimento da 1ª Parcela")
+                
+                # MOTOR DE PARCELAMENTO
+                c_p1, c_p2 = st.columns(2)
+                f_parcelas = c_p1.number_input("Qtd. de Parcelas", min_value=1, value=1, step=1, help="Deixe 1 para contas à vista/únicas.")
+                f_freq = c_p2.selectbox("Frequência", ["Mensal (30 dias)", "Quinzenal (15 dias)", "Semanal (7 dias)"])
+                
+                f_status = st.radio("A 1ª parcela já foi paga hoje?", ["Não (Pendente)", "Sim (Pago)"], horizontal=True)
+
+                if st.form_submit_button("Registrar Conta 💾", type="primary"):
+                    if f_val_total > 0 and f_desc:
+                        try:
+                            import datetime as dt
+                            aba_d = planilha_mestre.worksheet("DESPESAS")
+                            
+                            valor_parcela_base = round(f_val_total / f_parcelas, 2)
+                            novas_linhas = []
+                            
+                            for i in range(f_parcelas):
+                                num_parc = i + 1
+                                
+                                if f_freq == "Mensal (30 dias)": data_v = f_venc_ini + dt.timedelta(days=30 * i)
+                                elif f_freq == "Quinzenal (15 dias)": data_v = f_venc_ini + dt.timedelta(days=15 * i)
+                                else: data_v = f_venc_ini + dt.timedelta(days=7 * i)
+                                
+                                sufixo_parc = f" ({num_parc}/{f_parcelas})" if f_parcelas > 1 else ""
+                                nome_registro = f"[{f_forn.split(' - ')[0]}] {f_desc}{sufixo_parc}" if f_forn != "Avulso (Sem Fornecedor)" else f"{f_desc}{sufixo_parc}"
+                                
+                                if num_parc == f_parcelas: valor_final_parc = f_val_total - (valor_parcela_base * (f_parcelas - 1))
+                                else: valor_final_parc = valor_parcela_base
+                                
+                                if num_parc == 1 and f_status == "Sim (Pago)":
+                                    status_final = "Pago"
+                                    dt_pago = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                                else:
+                                    status_final = "Pendente"
+                                    dt_pago = "-"
+                                
+                                novas_linhas.append([
+                                    datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y"),
+                                    data_v.strftime("%d/%m/%Y"), nome_registro, f_cat, valor_final_parc, status_final, dt_pago, "-"
+                                ])
+                            
+                            for linha in novas_linhas:
+                                aba_d.append_row(linha, value_input_option='RAW')
+                                
+                            st.success(f"✅ {f_parcelas} parcela(s) registrada(s) no cofre!")
+                            st.cache_data.clear(); st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao salvar parcelamento: {e}")
+                    else:
+                        st.warning("Preencha a descrição e um valor maior que zero.")
+
+        with col_baixa:
+            st.write("#### ✅ Quitar Conta (Dar Baixa)")
+            st.info("Aqui você marca como 'Pagas' as contas que estavam pendentes.")
+            
+            if not df_desp.empty:
+                pendentes_baixa = df_desp[df_desp['STATUS_LIMPO'] == 'PENDENTE'].copy()
+                if not pendentes_baixa.empty:
+                    pendentes_baixa['LINHA_SHEETS'] = pendentes_baixa.index + 2 
+                    
+                    lista_baixas = []
+                    dict_linhas = {}
+                    for _, r in pendentes_baixa.iterrows():
+                        texto_item = f"📅 Venc: {r['VENCIMENTO']} | 💰 R$ {r['VALOR_NUM']:,.2f} | 🏭 {r['FORNECEDOR / DESPESA']}"
+                        lista_baixas.append(texto_item)
+                        dict_linhas[texto_item] = r['LINHA_SHEETS']
+                        
+                    conta_selecionada = st.selectbox("Selecione a conta para pagar agora:", ["---"] + lista_baixas)
+                    
+                    if conta_selecionada != "---":
+                        if st.button("Confirmar Pagamento 💵", type="secondary"):
+                            linha_alvo = dict_linhas[conta_selecionada]
+                            try:
+                                aba_d_baixa = planilha_mestre.worksheet("DESPESAS")
+                                aba_d_baixa.update_acell(f"F{linha_alvo}", "Pago")
+                                aba_d_baixa.update_acell(f"G{linha_alvo}", datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y"))
+                                st.success("🎉 Baixa realizada com sucesso!")
+                                st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao dar baixa: {e}")
+                else:
+                    st.write("Nenhuma conta pendente para dar baixa.")
+            else:
+                st.write("Nenhuma despesa cadastrada.")
+
+        # =======================================================
+        # 📜 O HISTÓRICO VISUAL (PARA CONFERÊNCIA RÁPIDA)
+        # =======================================================
+        st.divider()
+        st.write("#### 📜 Histórico de Despesas e Compras")
+        if not df_desp.empty:
+            # Inverte a ordem para mostrar do mais recente para o mais antigo
+            df_hist_view = df_desp.copy().iloc[::-1]
+            
+            # 💡 BLINDAGEM: Puxando as colunas pela posição (0, 1, 2, 3), independente de como foram digitadas na planilha!
+            col_data = df_hist_view.columns[0]
+            col_venc = df_hist_view.columns[1]
+            col_desc = df_hist_view.columns[2]
+            col_cat = df_hist_view.columns[3]
+            
+            colunas_pra_mostrar = [col_data, col_venc, col_desc, col_cat, 'VALOR_NUM', 'STATUS_LIMPO']
+            
+            st.dataframe(
+                df_hist_view[colunas_pra_mostrar],
+                column_config={
+                    col_data: "Lançamento",
+                    col_venc: "Vencimento",
+                    col_desc: "Descrição",
+                    col_cat: "Categoria",
+                    "VALOR_NUM": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
+                    "STATUS_LIMPO": "Status"
+                },
+                use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("Nenhum lançamento registrado no momento.")
+
+        # =======================================================
+        # 🆕 O MÓDULO DE CORREÇÃO DE ERROS (A BORRACHA MÁGICA)
+        # =======================================================
+        st.divider()
+        st.write("#### ✏️ / 🗑️ Gerenciar Lançamentos (Correção de Erros)")
+        st.info("Lançou algo errado ou duplicado? Escolha o registro abaixo para excluir permanentemente do sistema.")
+
+        if not df_desp.empty:
+            ultimas_desp = df_desp.tail(30).copy()
+            ultimas_desp['LINHA_SHEETS'] = ultimas_desp.index + 2
+            ultimas_desp = ultimas_desp.iloc[::-1]
+
+            lista_exclusao = []
+            dict_linhas_ex = {}
+            for _, r in ultimas_desp.iterrows():
+                status_icone = "🟢 PAGO" if r['STATUS_LIMPO'] == 'PAGO' else "🔴 PENDENTE"
+                texto_item = f"[{status_icone}] Registrado em: {r['DATA REGISTRO']} | Venc: {r['VENCIMENTO']} | R$ {r['VALOR_NUM']:,.2f} | {r['FORNECEDOR / DESPESA']}"
+                lista_exclusao.append(texto_item)
+                dict_linhas_ex[texto_item] = r['LINHA_SHEETS']
+
+            conta_excluir = st.selectbox("Selecione o lançamento que deseja EXCLUIR:", ["---"] + lista_exclusao, help="Cuidado! O registro será apagado direto do banco de dados.")
+
+            if conta_excluir != "---":
+                st.error("⚠️ Atenção: Esta ação apagará o registro da planilha e não pode ser desfeita.")
+                if st.button("🗑️ Excluir Registro Permanentemente"):
+                    linha_alvo_ex = dict_linhas_ex[conta_excluir]
+                    try:
+                        aba_d_ex = planilha_mestre.worksheet("DESPESAS")
+                        aba_d_ex.delete_rows(linha_alvo_ex)
+                        st.success("🗑️ Lançamento apagado com sucesso! Os gráficos já foram atualizados.")
+                        st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
+
+    # ------------------------------------------
+    # ABA 3: CADASTRO DE FORNECEDORES
+    # ------------------------------------------
+    with t_fornecedores:
+        with st.form("form_novo_forn", clear_on_submit=True):
+            st.write("#### 🤝 Cadastrar Novo Fornecedor / Fábrica")
+            
+            c_f1, c_f2 = st.columns(2)
+            nome_f = c_f1.text_input("Nome / Razão Social")
+            cat_f = c_f2.text_input("Categoria Principal", placeholder="Ex: Roupas, Embalagens, Sistema...")
+            
+            c_f3, c_f4 = st.columns(2)
+            tel_f = c_f3.text_input("WhatsApp de Contato")
+            pix_f = c_f4.text_input("Chave PIX")
+            
+            obs_f = st.text_input("Observações (Endereço, CNPJ, etc)")
+            
+            if st.form_submit_button("Criar Fornecedor"):
+                if nome_f:
+                    try:
+                        aba_forn = planilha_mestre.worksheet("FORNECEDORES")
+                        dados_forn = aba_forn.get_all_values()
+                        
+                        # Gera o código FORN-001, FORN-002 inteligente
+                        if len(dados_forn) > 1:
+                            ultimo_cod = str(dados_forn[-1][0])
+                            try: prox_num = int(ultimo_cod.replace("FORN-", "")) + 1
+                            except: prox_num = len(dados_forn)
+                        else:
+                            prox_num = 1
+                            
+                        novo_cod_forn = f"FORN-{prox_num:03d}"
+                        
+                        aba_forn.append_row([
+                            novo_cod_forn, nome_f.strip(), cat_f, tel_f, pix_f, obs_f
+                        ], value_input_option='RAW')
+                        
+                        st.success(f"Fábrica cadastrada! Código: {novo_cod_forn}")
+                        st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao cadastrar: {e}")
+                else:
+                    st.warning("O Nome do Fornecedor é obrigatório.")
+        
+        st.divider()
+        st.write("#### 🗂️ Lista de Fornecedores Ativos")
+        if not df_fornecedores.empty:
+            st.dataframe(df_fornecedores, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum fornecedor cadastrado no banco de dados.")
+
+        
+
 
 
 
