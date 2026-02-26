@@ -275,13 +275,19 @@ def carregar_dados():
     df_fin = ler_aba_seguro("FINANCEIRO")
     df_vendas = ler_aba_seguro("VENDAS")
     df_painel = ler_aba_seguro("PAINEL")
+    
+    # 💡 AQUI ESTÁ O SEGREDO: Puxando as novas abas
+    df_socios = ler_aba_seguro("SOCIOS")
+    df_aportes = ler_aba_seguro("APORTES")
 
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
 
-    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli
+    # 💡 AJUSTE 1: O return TEM que devolver as duas abas novas no final
+    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes
 
-banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full = carregar_dados()
+# 💡 AJUSTE 2: A variável que recebe os dados TEM que ter os nomes das duas abas novas no final
+banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes = carregar_dados()
 
 with st.sidebar:
     try:
@@ -2267,6 +2273,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
