@@ -806,29 +806,53 @@ elif menu_selecionado == "💰 Financeiro":
     if not df_vendas_hist.empty:
         try:
             # 1. PROCESSAMENTO SEGURO POR POSIÇÃO (ILOC)
-            df_fin = df_vendas_hist.copy()
+            df_fin_total = df_vendas_hist.copy()
             
-            # Mapeamento: Coluna L (11)=Total | M (12)=Lucro | O (14)=Pagto | U (20)=Saldo
-            df_fin['VALOR_NUM'] = df_fin.iloc[:, 11].apply(limpar_v)
-            df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v)
-            df_fin['FORMA_PG'] = df_fin.iloc[:, 14]
-            df_fin['SALDO_NUM'] = df_fin.iloc[:, 20].apply(limpar_v)
+            # ========================================================
+            # 🛑 O FILTRO DE GOVERNANÇA (SEPARAÇÃO SÓCIOS vs CLIENTES)
+            # ========================================================
+            try:
+                if not df_socios.empty:
+                    nomes_socios = df_socios['NOME'].astype(str).str.strip().tolist()
+                else:
+                    nomes_socios = ["Beatriz Anselmo"] # Fallback de segurança se a aba estiver vazia
+            except:
+                nomes_socios = ["Beatriz Anselmo"]
             
-            vendas_brutas = df_fin['VALOR_NUM'].sum()
-            lucro_bruto = df_fin['LUCRO_NUM'].sum()
-            saldo_devedor = df_fin['SALDO_NUM'].sum()
-            total_recebido = vendas_brutas - saldo_devedor
+            # Cria a máscara: É sócio? (Verifica se o nome na Coluna D (3) está na lista de sócios)
+            mascara_socios = df_fin_total.iloc[:, 3].astype(str).str.strip().isin(nomes_socios)
             
-            # Cálculo de Liquidez (O que já é dinheiro vivo vs. o que é Flex)
-            receita_imediata = df_fin[df_fin['FORMA_PG'] != 'Sweet Flex']['VALOR_NUM'].sum()
-            indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
+            # df_fin = VENDAS REAIS (Exclui os sócios)
+            df_fin = df_fin_total[~mascara_socios].copy()
             
-            # 2. MÉTRICAS PRINCIPAIS
+            # df_retiradas = PRODUTOS RETIRADOS PELOS SÓCIOS
+            df_retiradas = df_fin_total[mascara_socios].copy()
+            # ========================================================
+            
+            if not df_fin.empty:
+                # Mapeamento: Coluna L (11)=Total | M (12)=Lucro | O (14)=Pagto | U (20)=Saldo
+                df_fin['VALOR_NUM'] = df_fin.iloc[:, 11].apply(limpar_v)
+                df_fin['LUCRO_NUM'] = df_fin.iloc[:, 12].apply(limpar_v)
+                df_fin['FORMA_PG'] = df_fin.iloc[:, 14]
+                df_fin['SALDO_NUM'] = df_fin.iloc[:, 20].apply(limpar_v)
+                
+                vendas_brutas = df_fin['VALOR_NUM'].sum()
+                lucro_bruto = df_fin['LUCRO_NUM'].sum()
+                saldo_devedor = df_fin['SALDO_NUM'].sum()
+                total_recebido = vendas_brutas - saldo_devedor
+                
+                # Cálculo de Liquidez (O que já é dinheiro vivo vs. o que é Flex)
+                receita_imediata = df_fin[df_fin['FORMA_PG'] != 'Sweet Flex']['VALOR_NUM'].sum()
+                indice_liquidez = (receita_imediata / vendas_brutas * 100) if vendas_brutas > 0 else 0
+            else:
+                vendas_brutas = lucro_bruto = saldo_devedor = total_recebido = indice_liquidez = 0.0
+            
+            # 2. MÉTRICAS PRINCIPAIS (AGORA SÓ COM VENDAS REAIS)
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}")
-            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}")
-            c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro em Caixa")
-            c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", delta=f"{(saldo_devedor/vendas_brutas*100):.1f}% pendente", delta_color="inverse")
+            c1.metric("Vendas Totais", f"R$ {vendas_brutas:,.2f}", help="Soma de todas as vendas reais registradas para clientes (já excluindo as retiradas dos sócios).")
+            c2.metric("Lucro Bruto", f"R$ {lucro_bruto:,.2f}", help="Lucro projetado dessas vendas (Valor Total de Venda cobrado menos o Custo de Fábrica dos produtos).")
+            c3.metric("Total Recebido", f"R$ {total_recebido:,.2f}", delta="Dinheiro em Caixa", help="Capital que já entrou de fato no caixa da loja (Pix, Dinheiro, Cartão ou parcelas do Flex que já foram pagas).")
+            c4.metric("Saldo Devedor", f"R$ {saldo_devedor:,.2f}", delta=f"{(saldo_devedor/vendas_brutas*100):.1f}% pendente" if vendas_brutas > 0 else "0%", delta_color="inverse", help="Montante que está 'na rua', aguardando o pagamento das faturas em aberto pelas clientes.")
 
             # 3. TERMÔMETRO DE SAÚDE FINANCEIRA
             st.markdown("---")
@@ -845,11 +869,11 @@ elif menu_selecionado == "💰 Financeiro":
                     cor_barra = "#ff4b4b" # Vermelho
                     st.error(f"🔴 **Saúde de Caixa: CRÍTICA** (Apenas {indice_liquidez:.1f}% à vista)")
                 
-                # --- Barra de Progresso Customizada (Acompanha a cor) ---
+                # --- Barra de Progresso Customizada (Acompanha a cor e ganhou Tooltip HTML) ---
                 progresso = min(indice_liquidez/100, 1.0)
                 st.markdown(
                     f"""
-                    <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 10px;">
+                    <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 10px;" title="Porcentagem do Faturamento que já é dinheiro vivo no caixa.">
                         <div style="width: {progresso*100}%; background-color: {cor_barra}; height: 10px; border-radius: 10px;">
                         </div>
                     </div>
@@ -858,55 +882,58 @@ elif menu_selecionado == "💰 Financeiro":
                 )
             
             with col_t2:
-                st.metric("Recebíveis (Futuro)", f"R$ {saldo_devedor:,.2f}", help="Dinheiro que entrará via Sweet Flex.")
+                st.metric("Recebíveis (Futuro)", f"R$ {saldo_devedor:,.2f}", help="Dinheiro que entrará via faturas do Sweet Flex no futuro. É o reflexo do Saldo Devedor visto como promessa de recebimento.")
 
             # 4. DASHBOARD DE ANÁLISE (VERSÃO PREMIUM COM CORES DA MARCA)
             with st.expander("📊 Análise de Desempenho e Tendências", expanded=False):
-                t_faturamento, t_pagamentos, t_ticket = st.tabs(["📈 Faturamento", "💳 Meios de Pagamento", "🎟️ Ticket Médio"])
-                
-                import plotly.express as px
-                paleta_sweet = ['#31241b', '#8d5524', '#d4a373', '#f6debc'] # Marrons e Beges da marca
+                if not df_fin.empty:
+                    t_faturamento, t_pagamentos, t_ticket = st.tabs(["📈 Faturamento", "💳 Meios de Pagamento", "🎟️ Ticket Médio"])
+                    
+                    import plotly.express as px
+                    paleta_sweet = ['#31241b', '#8d5524', '#d4a373', '#f6debc'] # Marrons e Beges da marca
 
-                with t_faturamento:
-                    st.write("#### Evolução de Vendas no Tempo")
-                    df_fin['DATA_DT'] = pd.to_datetime(df_fin['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
-                    vendas_dia = df_fin.groupby('DATA_DT')['VALOR_NUM'].sum().reset_index()
+                    with t_faturamento:
+                        st.write("#### Evolução de Vendas no Tempo")
+                        df_fin['DATA_DT'] = pd.to_datetime(df_fin['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
+                        vendas_dia = df_fin.groupby('DATA_DT')['VALOR_NUM'].sum().reset_index()
+                        
+                        # Gráfico de Área com Formatação de R$ no hover
+                        fig_fat = px.area(vendas_dia, x='DATA_DT', y='VALOR_NUM',
+                                         labels={'VALOR_NUM': 'Total Vendido', 'DATA_DT': 'Data'},
+                                         color_discrete_sequence=[paleta_sweet[0]])
+                        fig_fat.update_traces(hovertemplate='<b>Data:</b> %{x}<br><b>Vendido:</b> R$ %{y:,.2f}')
+                        fig_fat.update_layout(xaxis_title=None, yaxis_title="Total (R$)", margin=dict(t=10, b=10, l=0, r=0))
+                        st.plotly_chart(fig_fat, use_container_width=True)
                     
-                    # Gráfico de Área com Formatação de R$ no hover
-                    fig_fat = px.area(vendas_dia, x='DATA_DT', y='VALOR_NUM',
-                                     labels={'VALOR_NUM': 'Total Vendido', 'DATA_DT': 'Data'},
-                                     color_discrete_sequence=[paleta_sweet[0]])
-                    fig_fat.update_traces(hovertemplate='<b>Data:</b> %{x}<br><b>Vendido:</b> R$ %{y:,.2f}')
-                    fig_fat.update_layout(xaxis_title=None, yaxis_title="Total (R$)", margin=dict(t=10, b=10, l=0, r=0))
-                    st.plotly_chart(fig_fat, use_container_width=True)
-                
-                with t_pagamentos:
-                    st.write("#### Composição dos Recebimentos")
-                    vendas_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].sum().reset_index()
-                    fig_pie = px.pie(vendas_meio, values='VALOR_NUM', names='FORMA_PG', 
-                                    color_discrete_sequence=paleta_sweet,
-                                    hole=.4)
-                    fig_pie.update_traces(textposition='inside', textinfo='percent+label', 
-                                         hovertemplate='<b>%{label}</b><br>Total: R$ %{value:,.2f}')
-                    fig_pie.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    with t_pagamentos:
+                        st.write("#### Composição dos Recebimentos")
+                        vendas_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].sum().reset_index()
+                        fig_pie = px.pie(vendas_meio, values='VALOR_NUM', names='FORMA_PG', 
+                                        color_discrete_sequence=paleta_sweet,
+                                        hole=.4)
+                        fig_pie.update_traces(textposition='inside', textinfo='percent+label', 
+                                             hovertemplate='<b>%{label}</b><br>Total: R$ %{value:,.2f}')
+                        fig_pie.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
+                        st.plotly_chart(fig_pie, use_container_width=True)
 
-                with t_ticket:
-                    st.write("#### Valor Médio por Venda (Ticket Médio)")
-                    # Arredondando para 2 casas decimais para evitar o erro visual
-                    ticket_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].mean().round(2).reset_index()
-                    
-                    fig_ticket = px.bar(ticket_meio, x='FORMA_PG', y='VALOR_NUM',
-                                       text='VALOR_NUM',
-                                       labels={'VALOR_NUM': 'Ticket Médio (R$)', 'FORMA_PG': 'Meio de Pagto'},
-                                       color='FORMA_PG',
-                                       color_discrete_sequence=paleta_sweet)
-                    
-                    fig_ticket.update_traces(texttemplate='R$ %{text:.2f}', textposition='outside',
-                                            hovertemplate='<b>%{x}</b><br>Média: R$ %{y:,.2f}')
-                    fig_ticket.update_layout(showlegend=False, yaxis_title="Valor (R$)", xaxis_title=None)
-                    st.plotly_chart(fig_ticket, use_container_width=True)
-                    st.caption("💡 O Ticket Médio ajuda a entender qual cliente gasta mais em cada modalidade.")
+                    with t_ticket:
+                        st.write("#### Valor Médio por Venda (Ticket Médio)")
+                        # Arredondando para 2 casas decimais para evitar o erro visual
+                        ticket_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].mean().round(2).reset_index()
+                        
+                        fig_ticket = px.bar(ticket_meio, x='FORMA_PG', y='VALOR_NUM',
+                                           text='VALOR_NUM',
+                                           labels={'VALOR_NUM': 'Ticket Médio (R$)', 'FORMA_PG': 'Meio de Pagto'},
+                                           color='FORMA_PG',
+                                           color_discrete_sequence=paleta_sweet)
+                        
+                        fig_ticket.update_traces(texttemplate='R$ %{text:.2f}', textposition='outside',
+                                                hovertemplate='<b>%{x}</b><br>Média: R$ %{y:,.2f}')
+                        fig_ticket.update_layout(showlegend=False, yaxis_title="Valor (R$)", xaxis_title=None)
+                        st.plotly_chart(fig_ticket, use_container_width=True)
+                        st.caption("💡 O Ticket Médio ajuda a entender qual cliente gasta mais em cada modalidade.")
+                else:
+                    st.info("Aguardando vendas de clientes reais para gerar os gráficos.")
 
         except Exception as e:
             st.error(f"⚠️ Erro ao processar o painel: {e}")
@@ -1266,6 +1293,214 @@ elif menu_selecionado == "💰 Financeiro":
                 
         except Exception as e:
             st.error(f"⚠️ Erro no núcleo de processamento gerencial: {e}")
+
+    # ====================================================
+    # 🏦 BANCO SWEET & GOVERNANÇA CORPORATIVA (NOVO)
+    # ====================================================
+    st.markdown("---")
+    with st.expander("🏦 Banco Sweet (Equity, Aportes e Retiradas)", expanded=False):
+        st.write("Módulo de gestão de sócios, injeção de capital e monitoramento de retiradas (Marketing/Uso Pessoal).")
+        
+        # --- 0. MINI DASHBOARD DO BANCO (RESUMO RÁPIDO) ---
+        try:
+            # Processa Aportes (Entradas)
+            if not df_aportes.empty:
+                df_aportes['VALOR_NUM'] = df_aportes['VALOR_R$'].apply(limpar_v)
+                aporte_total_empresa = df_aportes['VALOR_NUM'].sum()
+            else:
+                aporte_total_empresa = 0.0
+
+            # Processa Retiradas (Saídas) focando na Coluna L = TOTAL R$ e Coluna H = QUANTIDADE
+            if not df_retiradas.empty:
+                # Puxa a Coluna L (Índice 11) para somar os valores financeiros
+                df_retiradas['RETIRADA_NUM'] = df_retiradas.iloc[:, 11].apply(limpar_v)
+                
+                # Puxa a Coluna H (Índice 7) para somar as peças físicas reais
+                df_retiradas['QTD_PECAS'] = pd.to_numeric(df_retiradas.iloc[:, 7], errors='coerce').fillna(0)
+                
+                total_retirado_global = df_retiradas['RETIRADA_NUM'].sum()
+                qtd_total_pecas = int(df_retiradas['QTD_PECAS'].sum())
+            else:
+                total_retirado_global = 0.0
+                qtd_total_pecas = 0
+
+            # Saldo do Banco (Injeções - Retiradas)
+            saldo_banco_sweet = aporte_total_empresa - total_retirado_global
+            
+            b1, b2, b3 = st.columns(3)
+            b1.metric("📥 Capital Injetado", f"R$ {aporte_total_empresa:,.2f}", help="Soma de todo o dinheiro vivo (aportes) colocado na empresa pelos sócios.")
+            
+            # 💡 AQUI ESTÁ A MÁGICA: O delta agora mostra a quantidade exata de itens retirados
+            b2.metric("📤 Estoque Retirado", f"R$ {total_retirado_global:,.2f}", delta=f"{qtd_total_pecas} itens físicos", delta_color="inverse", help="Valor financeiro total consumido em produtos (respeitando descontos) e a quantidade exata de peças físicas retiradas da loja.")
+            
+            if saldo_banco_sweet >= 0:
+                b3.metric("💼 Balanço Corporativo", f"R$ {saldo_banco_sweet:,.2f}", delta="Superávit", help="Calculado: Capital Injetado menos Estoque Retirado. Se verde, a empresa tem caixa positivo frente às retiradas.")
+            else:
+                b3.metric("💼 Balanço Corporativo", f"R$ {saldo_banco_sweet:,.2f}", delta="Déficit", delta_color="inverse", help="Atenção: O valor dos produtos retirados do estoque já superou o dinheiro injetado pelos sócios.")
+        except Exception as e:
+            st.error(f"Erro ao carregar o resumo corporativo: {e}")
+            
+        st.divider()
+
+        # --- 1. CADASTRO DE NOVOS SÓCIOS ---
+        with st.form("form_novo_socio", clear_on_submit=True):
+            st.markdown("##### 🤝 Cadastrar Novo Sócio / Investidor")
+            st.caption("O código único (Ex: SOC-001) será gerado e vinculado automaticamente ao salvar.")
+            
+            c_s1, c_s2 = st.columns(2)
+            nome_s = c_s1.text_input("Nome Completo", help="Digite exatamente como a pessoa sairá nas vendas, caso ela faça retiradas de estoque.")
+            tel_s = c_s2.text_input("WhatsApp")
+            
+            if st.form_submit_button("Adicionar ao Quadro Societário", type="secondary"):
+                if nome_s:
+                    try:
+                        aba_soc = planilha_mestre.worksheet("SOCIOS")
+                        dados_soc = aba_soc.get_all_values()
+                        
+                        # 💡 Geração Inteligente de Código (À prova de falhas/exclusões)
+                        if len(dados_soc) > 1:
+                            ultimo_cod = str(dados_soc[-1][0]) # Pega o ID da última linha da planilha
+                            try:
+                                prox_num = int(ultimo_cod.replace("SOC-", "")) + 1
+                            except:
+                                prox_num = len(dados_soc)
+                        else:
+                            prox_num = 1 # Se a planilha só tiver o cabeçalho, ele será o número 1
+                            
+                        novo_cod = f"SOC-{prox_num:03d}" # Monta no formato SOC-001, SOC-002...
+                        
+                        # Salvando no Google Sheets
+                        aba_soc.append_row([
+                            novo_cod, 
+                            nome_s.strip(), 
+                            tel_s.strip(), 
+                            datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                        ], value_input_option='RAW')
+                        
+                        st.success(f"✅ {nome_s} cadastrado com sucesso! Código gerado: **{novo_cod}**")
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao cadastrar na aba SOCIOS: {e}")
+                else:
+                    st.warning("⚠️ O Nome Completo é obrigatório para gerar o cadastro.")
+
+        st.divider()
+
+        # --- 2. APORTES DE CAPITAL (INJEÇÃO DE DINHEIRO) ---
+        st.markdown("##### 💰 Injeção de Capital (Aportes)")
+        
+        try:
+            lista_socios_select = ["---"]
+            if not df_socios.empty:
+                lista_socios_select += [f"{row['COD_SOCIO']} - {row['NOME']}" for _, row in df_socios.iterrows()]
+                
+            with st.form("form_aporte_capital", clear_on_submit=True):
+                c_a1, c_a2, c_a3 = st.columns([1.5, 1, 1.5])
+                socio_aporte = c_a1.selectbox("Quem está investindo?", lista_socios_select, help="Selecione o sócio que está transferindo o dinheiro para o caixa da loja.")
+                
+                # 💡 AJUSTE AQUI: Começa em 0.00 limpo e formata com duas casas decimais
+                valor_aporte = c_a2.number_input("Valor (R$)", min_value=0.00, value=0.00, step=0.01, format="%.2f")
+                
+                tipo_aporte = c_a3.selectbox("Destinação", ["Caixa Geral", "Marketing", "Infraestrutura", "Reinvestimento de Lucro"])
+                obs_aporte = st.text_input("Observações do Aporte")
+                
+                if st.form_submit_button("Registrar Aporte 🚀", type="primary"):
+                    # 🛡️ Travas de segurança antes de salvar
+                    if socio_aporte == "---":
+                        st.warning("⚠️ Selecione um sócio.")
+                    elif valor_aporte <= 0:
+                        st.warning("⚠️ O valor do aporte deve ser maior que zero.")
+                    else:
+                        try:
+                            aba_ap = planilha_mestre.worksheet("APORTES")
+                            cod_soc, nome_soc = socio_aporte.split(" - ")[0], socio_aporte.split(" - ")[1]
+                            aba_ap.append_row([
+                                datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M"),
+                                cod_soc, nome_soc, valor_aporte, tipo_aporte, obs_aporte
+                            ], value_input_option='RAW')
+                            st.success("✅ Capital injetado com sucesso!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar na aba APORTES: {e}")
+        except Exception as e:
+            st.error(f"Aba SOCIOS não configurada. {e}")
+
+        st.divider()
+
+        # --- 3. CAP TABLE (QUADRO SOCIETÁRIO E MÉTRICAS) ---
+        st.markdown("##### 📊 Cap Table e Balanço dos Sócios")
+        st.caption("Distribuição de Equity calculada automaticamente pelo volume financeiro aportado por cada sócio.")
+        
+        try:
+            if not df_socios.empty:
+                # O processamento numérico já foi feito lá em cima no Mini Dashboard
+                if not df_aportes.empty:
+                    aportes_por_socio = df_aportes.groupby('NOME_SOCIO')['VALOR_NUM'].sum().to_dict()
+                else:
+                    aportes_por_socio = {}
+
+                if not df_retiradas.empty:
+                    retiradas_por_socio = df_retiradas.groupby('CLIENTE')['RETIRADA_NUM'].sum().to_dict()
+                else:
+                    retiradas_por_socio = {}
+
+                # Montando a Tabela de Sócios
+                dados_cap_table = []
+                for _, row in df_socios.iterrows():
+                    n_socio = str(row['NOME']).strip()
+                    t_aporte = aportes_por_socio.get(n_socio, 0.0)
+                    t_retirada = retiradas_por_socio.get(n_socio, 0.0)
+                    balanco = t_aporte - t_retirada
+                    
+                    # Participação baseada no montante injetado
+                    participacao = (t_aporte / aporte_total_empresa * 100) if aporte_total_empresa > 0 else 0.0
+                    
+                    dados_cap_table.append({
+                        "Sócio": n_socio,
+                        "Equity (%)": f"{participacao:.1f}%",
+                        "Capital Injetado": t_aporte,
+                        "Produtos Retirados": t_retirada,
+                        "Balanço Liquido": balanco
+                    })
+                
+                df_cap = pd.DataFrame(dados_cap_table)
+                
+                st.dataframe(
+                    df_cap,
+                    column_config={
+                        "Capital Injetado": st.column_config.NumberColumn(help="Total em dinheiro que este sócio investiu.", format="R$ %.2f"),
+                        "Produtos Retirados": st.column_config.NumberColumn("Retirado (Col L)", help="Valor consumido da loja em produtos.", format="R$ %.2f"),
+                        "Balanço Liquido": st.column_config.NumberColumn(help="Capital Injetado - Produtos Retirados.", format="R$ %.2f")
+                    },
+                    use_container_width=True, hide_index=True
+                )
+                
+                # --- 4. HISTÓRICO RÁPIDO DO BANCO SWEET (INJEÇÕES E RETIRADAS) ---
+                st.divider()
+                st.markdown("#### 📜 Extrato do Banco Sweet")
+                t_inv, t_ret = st.tabs(["Injeções de Dinheiro", "Peças Retiradas"])
+                
+                with t_inv:
+                    if not df_aportes.empty:
+                        # Exibe as injeções com as colunas relevantes
+                        st.dataframe(df_aportes[['DATA', 'NOME_SOCIO', 'VALOR_R$', 'TIPO', 'OBSERVACOES']], use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nenhum aporte financeiro registrado ainda na aba APORTES.")
+                
+                with t_ret:
+                    if not df_retiradas.empty:
+                        # Exibe as peças tiradas com base na aba VENDAS
+                        st.dataframe(df_retiradas[['DATA DA VENDA', 'CLIENTE', 'PRODUTO', 'TOTAL R$', 'FORMA DE PAGAMENTO']], use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Nenhuma retirada de produto registrada pelos sócios.")
+
+            else:
+                st.warning("Cadastre o primeiro sócio acima para gerar o Cap Table.")
+        except Exception as e:
+            st.error(f"Erro ao calcular Cap Table. Certifique-se que as abas SOCIOS e APORTES existem. {e}")
             
     st.markdown("### 🔍 Ficha de Cliente (Extrato Dinâmico)")
     opcoes_ficha = sorted([f"{k} - {v['nome']}" for k, v in banco_de_clientes.items()])
@@ -2032,6 +2267,7 @@ elif menu_selecionado == "📂 Documentos":
                 st.divider()
     else:
         st.info("O cofre geral está vazio.")
+
 
 
 
