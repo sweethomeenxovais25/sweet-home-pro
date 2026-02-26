@@ -395,7 +395,44 @@ if menu_selecionado == "🛒 Vendas":
     # Criamos a lista final apenas com os códigos mais recentes
     lista_selecao_limpa = [f"{v['full_cod']} - {v['nome']}" for v in produtos_filtrados_venda.values()]
     # -----------------------------------------------------
-    
+
+    # ✅ (ADICIONADO) Função de interoperabilidade: aceita chave str/int/float e resolve sem quebrar outras abas
+    def obter_info_produto(cod_str):
+        """
+        Resolve o produto em banco_de_produtos mesmo se as chaves forem str, int ou float.
+        Retorna (cod_resolvido, info_dict). Se não achar, retorna (cod_str, {}).
+        """
+        try:
+            cod_str = str(cod_str).strip()
+        except:
+            cod_str = ""
+
+        # 1) tenta direto como string
+        if cod_str in banco_de_produtos:
+            return cod_str, banco_de_produtos.get(cod_str, {})
+
+        # 2) tenta converter para float / int (para bancos que guardaram 101.2 como número)
+        try:
+            cod_float = float(cod_str.replace(",", "."))
+            if cod_float in banco_de_produtos:
+                return cod_float, banco_de_produtos.get(cod_float, {})
+            # Se for "101.0", tenta int também
+            cod_int = int(cod_float)
+            if cod_int in banco_de_produtos:
+                return cod_int, banco_de_produtos.get(cod_int, {})
+        except:
+            pass
+
+        # 3) fallback: tenta variações simples (ex: "101,2" -> "101.2")
+        try:
+            cod_norm = cod_str.replace(",", ".")
+            if cod_norm in banco_de_produtos:
+                return cod_norm, banco_de_produtos.get(cod_norm, {})
+        except:
+            pass
+
+        return cod_str, {}
+
     # ==========================================
     # --- 1. CONFIGURAÇÃO GERAL DA VENDA (CABEÇALHO) ---
     # ==========================================
@@ -443,6 +480,11 @@ if menu_selecionado == "🛒 Vendas":
         
         # Ajustamos as proporções para a caixa preencher melhor a tela e sumir com a lacuna
         c_p1, c_p2, c_p3, c_p4 = st.columns([3.5, 1, 1, 1])
+
+        # ✅ (ADICIONADO) Proteção: se não houver produtos, evita selectbox quebrar estado e evita split em None
+        if not lista_selecao_limpa:
+            st.warning("⚠️ Nenhum produto disponível no estoque. Verifique o INVENTÁRIO / carregamento do banco_de_produtos.")
+            st.stop()
         
         # 1. Seleção do Produto
         p_sel = c_p1.selectbox(
@@ -450,10 +492,17 @@ if menu_selecionado == "🛒 Vendas":
             sorted(lista_selecao_limpa), # Deixa em ordem alfabética/numérica
             key="venda_produto_sel"
         )
+
+        # ✅ (ADICIONADO) Blindagem do split: garante string e presença do separador
+        p_sel = "" if p_sel is None else str(p_sel)
+        if " - " not in p_sel:
+            st.error("⚠️ Formato inválido no item selecionado do estoque. Esperado: 'CÓDIGO - NOME'.")
+            st.stop()
         
         # 2. Recuperação do preço direto da planilha (usando o ID do produto selecionado)
-        cod_p_temp = p_sel.split(" - ")[0]
-        preco_da_planilha = limpar_v(banco_de_produtos.get(cod_p_temp, {}).get('venda', 0.0))
+        cod_p_temp = p_sel.split(" - ")[0].strip()
+        cod_resolvido, info_prod = obter_info_produto(cod_p_temp)
+        preco_da_planilha = limpar_v(info_prod.get('venda', 0.0))
         
         # 3. Campos de entrada
         qtd_v = c_p2.number_input("Qtd", value=1, min_value=1, key="venda_qtd_input")
@@ -467,9 +516,12 @@ if menu_selecionado == "🛒 Vendas":
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             
             if st.button("➕ Adicionar", use_container_width=True):
-                id_p = p_sel.split(" - ")[0]
+                id_p = p_sel.split(" - ")[0].strip()
                 nome_p = p_sel.split(" - ")[1].strip()
-                custo_un = float(banco_de_produtos.get(id_p, {}).get('custo', 0.0))
+
+                # ✅ (AJUSTADO) Lookup interoperável (str/int/float) para não “sumir” custo/preço quando vem de outra aba
+                id_res, info_p = obter_info_produto(id_p)
+                custo_un = float(limpar_v(info_p.get('custo', 0.0)))
                 
                 item_carrinho = {
                     "cod": id_p,
@@ -495,6 +547,8 @@ if menu_selecionado == "🛒 Vendas":
             st.markdown("#### 🛒 Itens Selecionados")
             df_car = pd.DataFrame(st.session_state['carrinho'])
             st.dataframe(df_car[['nome', 'qtd', 'preco', 'subtotal']], use_container_width=True, hide_index=True)
+
+            # (restante do seu código continua igual...)
             
             subtotal_venda = df_car['subtotal'].sum()
             
@@ -2741,6 +2795,7 @@ elif menu_selecionado == "🏭 Compras e Despesas":
             st.info("Nenhum fornecedor cadastrado no banco de dados.")
 
         
+
 
 
 
