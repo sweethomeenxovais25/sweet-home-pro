@@ -285,6 +285,7 @@ def carregar_dados():
 
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
+    banco_forn = {str(r.iloc[0]): {"nome": str(r.iloc[1])} for _, r in df_fornecedores.iterrows()} if not df_fornecedores.empty else {}
 
     # 💡 AJUSTE 2: O return TEM que devolver as duas abas novas no final
     return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas
@@ -2739,6 +2740,7 @@ elif menu_selecionado == "🏭 Compras e Despesas":
             st.info("Nenhum fornecedor cadastrado no banco de dados.")
 
         
+
 
 
 
