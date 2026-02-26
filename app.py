@@ -1796,18 +1796,19 @@ elif menu_selecionado == "📦 Estoque":
                         # Prepara a imagem
                         img = Image.open(foto_nf)
                         
-                        # A "ordem" que damos para a IA
+                        # A "ordem" RIGOROSA que damos para a IA (Engenharia de Prompt de Precisão)
                         prompt = """
-                        Você é o assistente de estoque da 'Sweet Home Enxovais'. 
-                        Sua tarefa é ler esta nota fiscal ou recibo e extrair os produtos.
-                        
-                        Aja como um sistema. Retorne o resultado EXATAMENTE no formato de uma tabela Markdown com as seguintes colunas:
+                        Você é um auditor de dados e leitor óptico de extrema precisão da 'Sweet Home Enxovais'. 
+                        Sua única função é ler a imagem desta nota fiscal/recibo e extrair a lista de produtos comprados com 100% de exatidão.
+
+                        Siga estas REGRAS RÍGIDAS E ABSOLUTAS:
+                        1. EXTRAÇÃO LITERAL: Copie os nomes dos produtos, quantidades e valores EXATAMENTE como estão impressos. Não deduza, não adivinhe, não abrevie e não corrija erros de português que estejam no papel.
+                        2. ATENÇÃO AOS NÚMEROS: Revise visualmente os valores de 'Custo Unitário' e 'Valor Total'. Respeite as vírgulas e pontos (ex: 1.500,00). Não tente refazer a matemática se a nota estiver com erro, apenas transcreva o que está lá.
+                        3. IGNORE O "LIXO VISUAL": Ignore totalmente CNPJ, endereço da loja, mensagens de agradecimento, cálculos de impostos (ICMS, IPI) ou troco. Foque APENAS nas linhas dos produtos/itens.
+                        4. FORMATO OBRIGATÓRIO: Retorne o resultado EXATAMENTE no formato de uma tabela Markdown com as seguintes colunas:
                         | Qtd | Descrição do Produto | Custo Unitário (R$) | Valor Total (R$) |
-                        
-                        REGRAS RÍGIDAS:
-                        1. Retorne APENAS a tabela. Não escreva nenhum texto de saudação, explicação ou formatação fora da tabela.
-                        2. Extraia os valores com precisão.
-                        3. Se a imagem não for uma nota fiscal ou estiver ilegível, retorne APENAS a frase: "⚠️ Documento ilegível ou não reconhecido. Tente enviar uma foto mais nítida."
+                        5. SILÊNCIO TOTAL: Retorne APENAS a tabela Markdown. É estritamente proibido escrever "Aqui está a tabela", "Claro, vou ajudar" ou qualquer outra palavra fora da tabela.
+                        6. SEGURANÇA: Se a imagem não for uma nota fiscal, não contiver produtos, ou estiver impossível de ler, retorne APENAS a frase exata: "⚠️ Documento ilegível ou sem itens reconhecidos. Tente uma foto mais nítida."
                         """
                         
                         # A mágica acontece aqui
@@ -2740,6 +2741,7 @@ elif menu_selecionado == "🏭 Compras e Despesas":
             st.info("Nenhum fornecedor cadastrado no banco de dados.")
 
         
+
 
 
 
