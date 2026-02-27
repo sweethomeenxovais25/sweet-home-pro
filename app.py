@@ -2534,8 +2534,12 @@ elif menu_selecionado == "🏭 Compras e Despesas":
                 st.write("#### Onde o dinheiro está sendo investido?")
                 if not pagos.empty:
                     import plotly.express as px
-                    gastos_cat = pagos.groupby('CATEGORIA')['VALOR_NUM'].sum().reset_index()
-                    fig_desp = px.pie(gastos_cat, values='VALOR_NUM', names='CATEGORIA', hole=0.4, 
+                    
+                    # 💡 A CORREÇÃO: Busca a coluna 'CATEGORIA' ou pega forçadamente a 4ª coluna (índice 3)
+                    col_cat_grafico = 'CATEGORIA' if 'CATEGORIA' in pagos.columns else pagos.columns[3]
+                    
+                    gastos_cat = pagos.groupby(col_cat_grafico)['VALOR_NUM'].sum().reset_index()
+                    fig_desp = px.pie(gastos_cat, values='VALOR_NUM', names=col_cat_grafico, hole=0.4, 
                                       color_discrete_sequence=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0'])
                     fig_desp.update_traces(textposition='inside', textinfo='percent+label')
                     fig_desp.update_layout(margin=dict(t=0, b=0, l=0, r=0), showlegend=False)
@@ -3303,6 +3307,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
