@@ -3102,7 +3102,119 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                 )
             else:
                 st.info("O histórico de postagens aparecerá aqui assim que o primeiro link for salvo.")
+
+    # ==========================================
+    # ✏️ BORRACHA MÁGICA: EDIÇÃO E EXCLUSÃO (MARKETING)
+    # ==========================================
+    st.divider()
+    with st.expander("✏️ Corrigir ou Excluir Demanda de Marketing", expanded=False):
+        st.write("Lançou um post errado ou duplicou sem querer? Escolha a demanda abaixo para corrigir os dados ou excluir permanentemente.")
         
+        if not df_mkt.empty:
+            # Puxa a lista invertida (para mostrar os mais recentes no topo)
+            demandas_recentes = df_mkt.copy().iloc[::-1]
+            
+            lista_opcoes = []
+            dict_linhas_mkt = {}
+            dict_dados_mkt = {}
+            
+            for idx, r in demandas_recentes.iterrows():
+                # Descobre a linha real na planilha do Google (index original + 2)
+                linha_real = idx + 2
+                id_mkt = str(r.get('ID_TAREFA', ''))
+                
+                texto_item = f"{id_mkt} | {r.get('FORMATO', '')} | Status: {r.get('STATUS', '')}"
+                lista_opcoes.append(texto_item)
+                
+                dict_linhas_mkt[texto_item] = linha_real
+                dict_dados_mkt[texto_item] = r
+                
+            demanda_selecionada = st.selectbox("Selecione a demanda para editar/excluir:", ["---"] + lista_opcoes)
+            
+            if demanda_selecionada != "---":
+                linha_alvo = dict_linhas_mkt[demanda_selecionada]
+                dados_atuais = dict_dados_mkt[demanda_selecionada]
+                
+                with st.form("form_edita_mkt"):
+                    st.markdown(f"#### 🔄 Atualizar Demanda ({dados_atuais.get('ID_TAREFA', '')})")
+                    
+                    e_c1, e_c2 = st.columns(2)
+                    
+                    # Tenta achar o produto na lista atual, senão joga pro índice 0
+                    opcoes_produtos_edit = ["Nenhum / Post Institucional"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
+                    try: idx_prod = opcoes_produtos_edit.index(str(dados_atuais.get('PRODUTO_VINCULADO', '')))
+                    except: idx_prod = 0
+                    novo_produto = e_c1.selectbox("Produto Vinculado", opcoes_produtos_edit, index=idx_prod)
+                    
+                    lista_formatos = ["📸 Foto para o Feed", "🎬 Reels", "📱 Story", "🛒 Atualizar no Site (Odoo)", "🎨 Outro (Banner, Logo...)"]
+                    try: idx_formato = lista_formatos.index(str(dados_atuais.get('FORMATO', '')))
+                    except: idx_formato = 0
+                    novo_formato = e_c2.selectbox("Formato", lista_formatos, index=idx_formato)
+                    
+                    nova_desc = st.text_area("Descrição da Demanda", value=str(dados_atuais.get('DESCRIÇÃO', '')))
+                    
+                    e_c3, e_c4 = st.columns(2)
+                    
+                    # Converte a data de texto para objeto datetime para não quebrar o calendário
+                    import datetime as dt
+                    try: data_atual_obj = dt.datetime.strptime(str(dados_atuais.get('DATA_AGENDADA', '')), "%d/%m/%Y").date()
+                    except: data_atual_obj = dt.datetime.now().date()
+                    nova_data = e_c3.date_input("Nova Data Agendada", value=data_atual_obj)
+                    
+                    lista_status = ["📥 Fila (Aguardando Início)", "✍️ Em Produção", "✅ Falta Postar", "🚀 Concluído"]
+                    try: idx_status = lista_status.index(str(dados_atuais.get('STATUS', '')))
+                    except: idx_status = 0
+                    novo_status = e_c4.selectbox("Status Atual", lista_status, index=idx_status)
+                    
+                    novo_link = st.text_input("Link da Arte (se aplicável)", value=str(dados_atuais.get('LINK_ARTE', '-')))
+                    
+                    st.divider()
+                    col_btn1, col_btn2 = st.columns([2, 1])
+                    salvar = col_btn1.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+                    
+                    st.write("---")
+                    confirma_exclusao = st.checkbox("Confirmar que desejo EXCLUIR esta demanda permanentemente")
+                    excluir = col_btn2.form_submit_button("🗑️ Excluir", type="secondary", use_container_width=True)
+                    
+                    if salvar:
+                        with st.spinner("Atualizando na planilha..."):
+                            try:
+                                aba_mkt = planilha_mestre.worksheet("MARKETING")
+                                nova_data_str = nova_data.strftime("%d/%m/%Y")
+                                
+                                # Dispara as edições nas colunas corretas (C até H)
+                                atualizacoes = [
+                                    {'range': f'C{linha_alvo}', 'values': [[novo_produto]]},
+                                    {'range': f'D{linha_alvo}', 'values': [[novo_formato]]},
+                                    {'range': f'E{linha_alvo}', 'values': [[nova_desc]]},
+                                    {'range': f'F{linha_alvo}', 'values': [[nova_data_str]]},
+                                    {'range': f'G{linha_alvo}', 'values': [[novo_status]]},
+                                    {'range': f'H{linha_alvo}', 'values': [[novo_link]]}
+                                ]
+                                aba_mkt.batch_update(atualizacoes, value_input_option='USER_ENTERED')
+                                
+                                st.success("✅ Demanda atualizada com sucesso!")
+                                st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar: {e}")
+                                
+                    if excluir:
+                        if confirma_exclusao:
+                            with st.spinner("Apagando registro..."):
+                                try:
+                                    aba_mkt = planilha_mestre.worksheet("MARKETING")
+                                    aba_mkt.delete_rows(linha_alvo) # Remove a linha da planilha
+                                    
+                                    st.success("🗑️ Demanda excluída do sistema!")
+                                    st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao excluir: {e}")
+                        else:
+                            st.warning("⚠️ Você precisa marcar a caixa de confirmação para excluir a tarefa.")
+        else:
+            st.info("Nenhuma demanda de marketing registrada no momento.")
+        
+
 
 
 
