@@ -581,7 +581,7 @@ if menu_selecionado == "🛒 Vendas":
                             f"🌸 *DOCE LAR - RECIBO DE COMPRA* 🌸\n"
                             f"━━━━━━━━━━━━━━━━━━━\n"
                             f"Olá, eu sou a Bia! ✨ É um prazer atender você, *{nome_cli.split(' ')[0]}*.\n"
-                            f"Aqui está o resumo detalhado da sua felicidade:\n\n"
+                            f"Aqui está o resumo detalhado da sua compra:\n\n"
                         )
                         for item in st.session_state['carrinho']:
                             recibo_texto += f"🛍️ {item['qtd']}x {item['nome']} - R$ {item['subtotal']:,.2f}\n"
@@ -3389,6 +3389,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
