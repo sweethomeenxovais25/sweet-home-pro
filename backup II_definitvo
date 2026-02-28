@@ -2012,26 +2012,108 @@ elif menu_selecionado == "👥 Clientes":
 
     st.divider()
 
+    # 💡 Memória para o Recibo de Confirmação
+    if 'recibo_novo_cliente' not in st.session_state:
+        st.session_state['recibo_novo_cliente'] = None
+
     with st.expander("➕ Cadastrar Nova Cliente (Sem compra atual)", expanded=False):
         with st.form("form_novo_manual", clear_on_submit=True):
             st.markdown("Código gerado automaticamente.")
             c1, c2 = st.columns([2, 1])
             n_nome = c1.text_input("Nome Completo *")
             n_zap = c2.text_input("WhatsApp *")
+            
             c3, c4 = st.columns([3, 1])
             n_end = c3.text_input("Endereço")
             n_vale = c4.number_input("Vale Desconto", 0.0)
+            
             if st.form_submit_button("Salvar Cadastro 💾"):
                 if n_nome and n_zap:
-                    try:
-                        aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
-                        codigo = f"CLI-{len(aba_cli_sheet.get_all_values()):03d}"
-                        aba_cli_sheet.append_row([codigo, n_nome.strip(), n_zap.strip(), n_end.strip(), datetime.now().strftime("%d/%m/%Y"), n_vale, "", "Completo" if n_end else "Incompleto"], value_input_option='USER_ENTERED')
-                        st.success(f"✅ {n_nome} cadastrada!")
-                        st.cache_data.clear()
-                        st.cache_resource.clear()
-                    except Exception as e:
-                        st.error(f"Erro: {e}")
+                    with st.spinner("Salvando no cofre de clientes..."):
+                        try:
+                            import pytz
+                            from datetime import datetime
+                            agora = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                            
+                            aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
+                            dados_c = aba_cli_sheet.get_all_values()
+                            
+                            # 💡 NOVO GERADOR DE ID BLINDADO
+                            if len(dados_c) > 1:
+                                ultimo_cod = str(dados_c[-1][0])
+                                try: prox_num = int(ultimo_cod.replace("CLI-", "")) + 1
+                                except: prox_num = len(dados_c)
+                            else:
+                                prox_num = 1
+                                
+                            codigo = f"CLI-{prox_num:03d}"
+                            status_cad = "Completo" if n_end.strip() else "Incompleto"
+                            
+                            # Monta a linha exata
+                            linha_cliente = [codigo, n_nome.strip(), n_zap.strip(), n_end.strip(), agora, n_vale, "", status_cad]
+                            
+                            # ==========================================
+                            # 💡 A TÉCNICA DAS LINHAS (FIM DA LINHA 1000)
+                            # ==========================================
+                            try:
+                                # 1º Tenta achar a linha de TOTAIS (se houver) e insere acima dela
+                                cel_tot_cli = aba_cli_sheet.find("TOTAIS")
+                                aba_cli_sheet.insert_row(linha_cliente, index=cel_tot_cli.row, value_input_option='USER_ENTERED')
+                            except:
+                                # 2º Se não tiver TOTAIS, lê a Coluna A e insere logo após o último texto real
+                                valores_colA = aba_cli_sheet.col_values(1)
+                                linhas_reais = [v for v in valores_colA if str(v).strip() != ""]
+                                prox_linha = len(linhas_reais) + 1
+                                aba_cli_sheet.insert_row(linha_cliente, index=prox_linha, value_input_option='USER_ENTERED')
+                            
+                            # 💡 GERA O COMPROVANTE NA MEMÓRIA
+                            st.session_state['recibo_novo_cliente'] = {
+                                "codigo": codigo,
+                                "nome": n_nome.strip(),
+                                "zap": n_zap.strip()
+                            }
+                            
+                            st.cache_data.clear()
+                            st.cache_resource.clear()
+                            st.rerun() 
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
+                else:
+                    st.warning("⚠️ Por favor, preencha o Nome e o WhatsApp (obrigatórios).")
+
+        # ==========================================
+        # 🧾 RECIBO DE CONFIRMAÇÃO VISUAL E HISTÓRICO
+        # ==========================================
+        if st.session_state.get('recibo_novo_cliente'):
+            recibo = st.session_state['recibo_novo_cliente']
+            st.success("✅ Cadastro Gravado com Sucesso!")
+            
+            st.info(f"👤 **Cliente:** {recibo['nome']}\n\n📱 **WhatsApp:** {recibo['zap']}\n\n🏷️ **Código Gerado:** {recibo['codigo']}")
+            
+            if st.button("✖️ Fechar Comprovante"):
+                st.session_state['recibo_novo_cliente'] = None
+                st.rerun()
+
+        st.write("---")
+        with st.expander("🕒 Últimos Cadastros Realizados (Conferência de Segurança)", expanded=False):
+            st.write("Visualize abaixo os últimos clientes adicionados para confirmar que o sistema gravou corretamente.")
+            if not df_clientes_full.empty:
+                df_historico_cli = df_clientes_full.copy().iloc[::-1].head(5)
+                colunas_importantes = [df_clientes_full.columns[0], df_clientes_full.columns[1], df_clientes_full.columns[4], df_clientes_full.columns[7]]
+                
+                st.dataframe(
+                    df_historico_cli[colunas_importantes],
+                    column_config={
+                        df_clientes_full.columns[0]: "Código",
+                        df_clientes_full.columns[1]: "Nome",
+                        df_clientes_full.columns[4]: "Data Inclusão",
+                        df_clientes_full.columns[7]: "Status"
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.caption("Ainda não há clientes na base para exibir o histórico.")
 
     st.divider()
     
@@ -3308,6 +3390,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
