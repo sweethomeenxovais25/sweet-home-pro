@@ -532,13 +532,38 @@ if menu_selecionado == "🛒 Vendas":
                             if not modo_teste:
                                 aba_cli = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
                                 dados_c = aba_cli.get_all_values()
-                                nomes_up = [l[1].strip().upper() for l in dados_c[1:]]
+                                nomes_up = [l[1].strip().upper() for l in dados_c[1:] if len(l) > 1]
+                                
                                 if nome_cli.upper() in nomes_up:
-                                    cod_cli = dados_c[nomes_up.index(nome_cli.upper())+1][0]
+                                    # Se achar, descobre a linha correta baseada na lista filtrada (+1 pelo cabeçalho)
+                                    idx_encontrado = nomes_up.index(nome_cli.upper()) + 1
+                                    cod_cli = dados_c[idx_encontrado][0]
                                 else:
-                                    cod_cli = f"CLI-{len(dados_c):03d}"
-                                    aba_cli.append_row([cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0, "", "Incompleto"], value_input_option='RAW')
-                            else: cod_cli = "CLI-TESTE"
+                                    # 💡 GERADOR INTELIGENTE (Evita pular pro 1000)
+                                    try:
+                                        ultimo_cod_cli = str(dados_c[-1][0])
+                                        prox_num_cli = int(ultimo_cod_cli.replace("CLI-", "")) + 1
+                                    except:
+                                        prox_num_cli = len(dados_c)
+                                    
+                                    cod_cli = f"CLI-{prox_num_cli:03d}"
+                                    
+                                    # 💡 MONTAGEM DA LINHA (8 Colunas cravadas: Cód, Nome, Fone, Endereço, Data, Vale(0.0), Vazio, Status)
+                                    linha_novo_cli = [cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0.0, "", "Incompleto"]
+                                    
+                                    # 💡 TÉCNICA DAS LINHAS (Fim do Bug da Linha 1000)
+                                    try:
+                                        # Tenta achar "TOTAIS" na aba de clientes (se houver)
+                                        cel_tot_cli = aba_cli.find("TOTAIS")
+                                        aba_cli.insert_row(linha_novo_cli, index=cel_tot_cli.row, value_input_option='USER_ENTERED')
+                                    except:
+                                        # Se não achar TOTAIS, injeta na primeira linha vazia com base na Coluna A
+                                        valores_colA = aba_cli.col_values(1)
+                                        linhas_reais = [v for v in valores_colA if str(v).strip() != ""]
+                                        prox_linha = len(linhas_reais) + 1
+                                        aba_cli.insert_row(linha_novo_cli, index=prox_linha, value_input_option='USER_ENTERED')
+                            else: 
+                                cod_cli = "CLI-TESTE"
                         else:
                             cod_cli = c_sel.split(" - ")[0]
                             nome_cli = banco_de_clientes[cod_cli]['nome']
@@ -3504,6 +3529,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
