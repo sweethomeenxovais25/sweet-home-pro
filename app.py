@@ -1907,7 +1907,13 @@ elif menu_selecionado == "📦 Estoque":
                 st.session_state['resultado_ia_nota'] = None
                 st.rerun()
 
+    # ==========================================
     # 🔍 RADAR DE ENTRADA (ATUALIZAÇÃO RÁPIDA)
+    # ==========================================
+    # 💡 Memória para o Recibo de Correção do Estoque
+    if 'recibo_radar' not in st.session_state:
+        st.session_state['recibo_radar'] = None
+
     st.divider()
     st.write("### 🔍 Radar de Entrada")
     busca_radar = st.text_input("Pesquisar produto para atualizar", placeholder="Ex: lencol casal ou 800", key="txt_busca_radar")
@@ -1990,11 +1996,10 @@ elif menu_selecionado == "📦 Estoque":
                                 with st.spinner("Sincronizando..."):
                                     aba = planilha_mestre.worksheet("INVENTÁRIO")
                                     
-                                    # 💡 Upgrade: Usando batch_update para alterar todas as colunas de uma vez só (muito mais rápido)
                                     atualizacoes = [
                                         {'range': f'A{lin_p}', 'values': [[novo_cod.strip()]]},
                                         {'range': f'B{lin_p}', 'values': [[novo_nome.strip()]]},
-                                        {'range': f'C{lin_p}', 'values': [[real + vend_g]]}, # Qtd Comprada = Físico atual + O que já vendeu
+                                        {'range': f'C{lin_p}', 'values': [[real + vend_g]]},
                                         {'range': f'D{lin_p}', 'values': [[novo_custo]]},
                                         {'range': f'I{lin_p}', 'values': [[novo_preco]]}
                                     ]
@@ -2009,7 +2014,38 @@ elif menu_selecionado == "📦 Estoque":
                                         st.session_state.get('usuario_logado', 'Bia')
                                     ], value_input_option='RAW')
                                     
-                                    st.success("✅ Produto corrigido com sucesso!"); st.cache_data.clear(); st.rerun()
+                                    # 💡 GERAÇÃO DO RECIBO NA MEMÓRIA
+                                    st.session_state['recibo_radar'] = {
+                                        "cod": novo_cod.strip(),
+                                        "nome": novo_nome.strip(),
+                                        "qtd_antiga": est_h,
+                                        "qtd_nova": real,
+                                        "custo": novo_custo,
+                                        "preco": novo_preco
+                                    }
+                                    st.cache_data.clear(); st.rerun()
+
+    # ==========================================
+    # 🧾 RECIBO DE CORREÇÃO DO RADAR
+    # ==========================================
+    if st.session_state.get('recibo_radar'):
+        recibo = st.session_state['recibo_radar']
+        st.success("✅ Produto corrigido na base de dados com sucesso!")
+        
+        st.markdown("#### 📋 Resumo da Atualização")
+        tabela_resumo_estoque = f"""
+| Informação | Detalhe Salvo |
+| :--- | :--- |
+| 📦 **Produto** | {recibo['cod']} - {recibo['nome']} |
+| 🔄 **Estoque Físico** | Corrigido de {recibo['qtd_antiga']} para **{recibo['qtd_nova']}** |
+| 💵 **Custo** | R$ {recibo['custo']:.2f} |
+| 💰 **Preço** | R$ {recibo['preco']:.2f} |
+"""
+        st.markdown(tabela_resumo_estoque)
+        
+        if st.button("✖️ Fechar Recibo", key="fechar_recibo_radar"):
+            st.session_state['recibo_radar'] = None
+            st.rerun()
 
     # ➕ CADASTRO DE NOVO PRODUTO
     st.divider()
@@ -3468,6 +3504,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
