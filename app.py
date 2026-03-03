@@ -3110,28 +3110,6 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     df_mkt = df_marketing.copy()
     if not df_mkt.empty:
         df_mkt.columns = [str(c).strip().upper() for c in df_mkt.columns]
-    
-    # ==========================================
-    # 🧾 CENTRAL DE NOTIFICAÇÕES (RECIBOS)
-    # ==========================================
-    if st.session_state['recibo_mkt']:
-        recibo = st.session_state['recibo_mkt']
-        st.divider()
-        if recibo['acao'] == "criado":
-            st.success("✅ **Desafio Lançado com Sucesso!**")
-            st.markdown(f"A nova demanda **{recibo['id']}** ({recibo['formato']}) para o produto *{recibo['produto']}* já está no Kanban da equipe! Prazo: **{recibo['prazo']}**.")
-        elif recibo['acao'] == "movido":
-            st.success(f"🔄 **Tarefa Movida!** O card **{recibo['id']}** avançou para: **{recibo['novo_status']}**.")
-        elif recibo['acao'] == "validado":
-            st.success(f"🌐 **Arte no Ar!** O link oficial do Instagram foi vinculado à tarefa **{recibo['id']}** e o portfólio foi atualizado.")
-        elif recibo['acao'] == "editado":
-            st.success(f"✏️ **Atualização Salva!** A tarefa **{recibo['id']}** foi corrigida na base de dados.")
-        elif recibo['acao'] == "excluido":
-            st.warning(f"🗑️ **Demanda Excluída.** A tarefa foi removida permanentemente do sistema.")
-
-        if st.button("✖️ Fechar Aviso", key="fechar_aviso_mkt"):
-            st.session_state['recibo_mkt'] = None
-            st.rerun()
             
     # 📊 DASHBOARD DE MÉTRICAS (VISÃO DO DIRETOR)
     st.divider()
@@ -3155,13 +3133,30 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     
     st.divider()
     
-    # ABAS DE NAVEGAÇÃO DO MARKETING
-    t_nova_tarefa, t_kanban, t_calendario, t_auditoria = st.tabs(["➕ Nova Demanda", "📋 Quadro de Produção", "📅 Agenda", "✅ Vitrine & Auditoria"])
+    # 💡 NAVEGAÇÃO COM MEMÓRIA (Substitui as abas antigas para a página não resetar ao salvar)
+    aba_selecionada = st.radio(
+        "Navegue pelo Marketing:",
+        ["➕ Nova Demanda", "📋 Quadro de Produção", "📅 Agenda", "✅ Vitrine & Auditoria"],
+        horizontal=True,
+        key="aba_mkt_memoria",
+        label_visibility="collapsed"
+    )
     
     # ==========================================
     # ABA 1: NOVA DEMANDA (ONDE A BIA PEDE)
     # ==========================================
-    with t_nova_tarefa:
+    if aba_selecionada == "➕ Nova Demanda":
+        
+        # 🧾 RECIBO LOCALIZADO
+        if st.session_state.get('recibo_mkt') and st.session_state['recibo_mkt']['acao'] == "criado":
+            r = st.session_state['recibo_mkt']
+            st.success("✅ **Desafio Lançado com Sucesso!**")
+            st.markdown(f"A nova demanda **{r['id']}** ({r['formato']}) para o produto *{r['produto']}* já está no Kanban da equipe! Prazo: **{r['prazo']}**.")
+            if st.button("✖️ Fechar Aviso", key="fechar_aviso_criado"):
+                st.session_state['recibo_mkt'] = None
+                st.rerun()
+            st.divider()
+
         st.write("#### 💡 O que precisamos criar hoje?")
         with st.form("form_novo_marketing", clear_on_submit=True):
             c1, c2 = st.columns([2, 1])
@@ -3211,7 +3206,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                             
                             aba_mkt.append_row(linha_mkt, value_input_option='RAW')
                             
-                            # 💡 RECIBO E REFRESH
+                            # 💡 MOTOR DO RECIBO E REFRESH
                             st.session_state['recibo_mkt'] = {"acao": "criado", "id": novo_id, "produto": f_produto, "formato": f_formato, "prazo": data_prazo_str}
                             st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                         except Exception as e:
@@ -3222,7 +3217,17 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     # ==========================================
     # ABA 2: KANBAN
     # ==========================================
-    with t_kanban:
+    elif aba_selecionada == "📋 Quadro de Produção":
+        
+        # 🧾 RECIBO LOCALIZADO
+        if st.session_state.get('recibo_mkt') and st.session_state['recibo_mkt']['acao'] == "movido":
+            r = st.session_state['recibo_mkt']
+            st.success(f"🔄 **Tarefa Movida!** O card **{r['id']}** avançou para: **{r['novo_status']}**.")
+            if st.button("✖️ Fechar Aviso", key="fechar_aviso_movido"):
+                st.session_state['recibo_mkt'] = None
+                st.rerun()
+            st.divider()
+
         st.write("### 📋 Quadro de Produção (Kanban)")
         
         if not df_mkt.empty:
@@ -3274,7 +3279,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                             agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
                                             aba_mkt.update_acell(f"J{linha_planilha}", agora)
                                             
-                                        # 💡 RECIBO E REFRESH
+                                        # 💡 MOTOR DO RECIBO E REFRESH
                                         st.session_state['recibo_mkt'] = {"acao": "movido", "id": task['ID_TAREFA'], "novo_status": proximo}
                                         st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                                     except Exception as e:
@@ -3285,7 +3290,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     # ==========================================
     # ABA 3: CALENDÁRIO / AGENDA DE POSTAGENS
     # ==========================================
-    with t_calendario:
+    elif aba_selecionada == "📅 Agenda":
         st.write("### 📅 Cronograma de Conteúdo")
         st.write("Veja o que está programado para ir ao ar nos próximos dias.")
         
@@ -3361,7 +3366,17 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     # ==========================================
     # ABA 4: VITRINE E AUDITORIA (LINKAR O INSTAGRAM)
     # ==========================================
-    with t_auditoria:
+    elif aba_selecionada == "✅ Vitrine & Auditoria":
+        
+        # 🧾 RECIBO LOCALIZADO
+        if st.session_state.get('recibo_mkt') and st.session_state['recibo_mkt']['acao'] == "validado":
+            r = st.session_state['recibo_mkt']
+            st.success(f"🌐 **Arte no Ar!** O link oficial do Instagram foi vinculado à tarefa **{r['id']}** e o portfólio foi atualizado.")
+            if st.button("✖️ Fechar Aviso", key="fechar_aviso_validado"):
+                st.session_state['recibo_mkt'] = None
+                st.rerun()
+            st.divider()
+
         st.write("### ✅ Validação de Postagens (Auditoria)")
         st.write("Postou no Instagram? Cole o link aqui para dar baixa oficial e guardar no histórico!")
         
@@ -3396,7 +3411,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                         aba_mkt.update_acell(f"I{linha_planilha}", link_post)      # Link Instagram
                                         aba_mkt.update_acell(f"J{linha_planilha}", agora)          # Data Conclusão
                                         
-                                        # 💡 RECIBO E REFRESH
+                                        # 💡 MOTOR DO RECIBO E REFRESH
                                         st.session_state['recibo_mkt'] = {"acao": "validado", "id": id_alvo}
                                         st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                                     except Exception as e:
@@ -3435,7 +3450,25 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     # ✏️ BORRACHA MÁGICA: EDIÇÃO E EXCLUSÃO (MARKETING)
     # ==========================================
     st.divider()
-    with st.expander("✏️ Corrigir ou Excluir Demanda de Marketing", expanded=False):
+    
+    # 💡 O Expander abre sozinho se você acabou de editar/excluir algo
+    abriu_borracha = True if st.session_state.get('recibo_mkt') and st.session_state['recibo_mkt']['acao'] in ['editado', 'excluido'] else False
+    
+    with st.expander("✏️ Corrigir ou Excluir Demanda de Marketing", expanded=abriu_borracha):
+        
+        # 🧾 RECIBO LOCALIZADO
+        if abriu_borracha:
+            r = st.session_state['recibo_mkt']
+            if r['acao'] == "editado":
+                st.success(f"✏️ **Atualização Salva!** A tarefa **{r['id']}** foi corrigida na base de dados.")
+            else:
+                st.warning("🗑️ **Demanda Excluída.** A tarefa foi removida permanentemente do sistema.")
+
+            if st.button("✖️ Fechar Aviso", key="fechar_aviso_borracha"):
+                st.session_state['recibo_mkt'] = None
+                st.rerun()
+            st.divider()
+
         st.write("Lançou um post errado ou duplicou sem querer? Escolha a demanda abaixo para corrigir os dados ou excluir permanentemente.")
         
         if not df_mkt.empty:
@@ -3515,7 +3548,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                 ]
                                 aba_mkt.batch_update(atualizacoes, value_input_option='USER_ENTERED')
                                 
-                                # 💡 RECIBO E REFRESH
+                                # 💡 MOTOR DO RECIBO E REFRESH
                                 st.session_state['recibo_mkt'] = {"acao": "editado", "id": dados_atuais.get('ID_TAREFA', '')}
                                 st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                             except Exception as e:
@@ -3528,7 +3561,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                     aba_mkt = planilha_mestre.worksheet("MARKETING")
                                     aba_mkt.delete_rows(linha_alvo)
                                     
-                                    # 💡 RECIBO E REFRESH
+                                    # 💡 MOTOR DO RECIBO E REFRESH
                                     st.session_state['recibo_mkt'] = {"acao": "excluido"}
                                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                                 except Exception as e:
@@ -3538,57 +3571,3 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
