@@ -3102,11 +3102,37 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     st.title("📢 Gestão de Marketing e Conteúdo")
     st.write("A sua central de comando para alinhar ideias, aprovar artes e dominar as redes sociais.")
     
+    # 💡 MEMÓRIA DO SISTEMA PARA RECIBOS (Evita o "Refresh Fantasma")
+    if 'recibo_mkt' not in st.session_state:
+        st.session_state['recibo_mkt'] = None
+    
     # Preparação dos Dados
     df_mkt = df_marketing.copy()
     if not df_mkt.empty:
         df_mkt.columns = [str(c).strip().upper() for c in df_mkt.columns]
     
+    # ==========================================
+    # 🧾 CENTRAL DE NOTIFICAÇÕES (RECIBOS)
+    # ==========================================
+    if st.session_state['recibo_mkt']:
+        recibo = st.session_state['recibo_mkt']
+        st.divider()
+        if recibo['acao'] == "criado":
+            st.success("✅ **Desafio Lançado com Sucesso!**")
+            st.markdown(f"A nova demanda **{recibo['id']}** ({recibo['formato']}) para o produto *{recibo['produto']}* já está no Kanban da equipe! Prazo: **{recibo['prazo']}**.")
+        elif recibo['acao'] == "movido":
+            st.success(f"🔄 **Tarefa Movida!** O card **{recibo['id']}** avançou para: **{recibo['novo_status']}**.")
+        elif recibo['acao'] == "validado":
+            st.success(f"🌐 **Arte no Ar!** O link oficial do Instagram foi vinculado à tarefa **{recibo['id']}** e o portfólio foi atualizado.")
+        elif recibo['acao'] == "editado":
+            st.success(f"✏️ **Atualização Salva!** A tarefa **{recibo['id']}** foi corrigida na base de dados.")
+        elif recibo['acao'] == "excluido":
+            st.warning(f"🗑️ **Demanda Excluída.** A tarefa foi removida permanentemente do sistema.")
+
+        if st.button("✖️ Fechar Aviso", key="fechar_aviso_mkt"):
+            st.session_state['recibo_mkt'] = None
+            st.rerun()
+            
     # 📊 DASHBOARD DE MÉTRICAS (VISÃO DO DIRETOR)
     st.divider()
     st.write("#### 📊 Visão Geral da Produção")
@@ -3115,7 +3141,6 @@ elif menu_selecionado == "📢 Gestão de Marketing":
     total_pedidos = len(df_mkt) if not df_mkt.empty else 0
     
     if not df_mkt.empty:
-        # 💡 A CORREÇÃO: O símbolo '|' atua como 'OU'. Agora ele soma a Fila com a Produção!
         em_producao = len(df_mkt[df_mkt['STATUS'].str.contains('Em Produção|Fila', case=False, na=False)])
         falta_postar = len(df_mkt[df_mkt['STATUS'].str.contains('Falta Postar', case=False, na=False)])
         concluidos = len(df_mkt[df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)])
@@ -3141,13 +3166,14 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         with st.form("form_novo_marketing", clear_on_submit=True):
             c1, c2 = st.columns([2, 1])
             
-            # O Pulo do Gato: Puxar os produtos reais do sistema
             opcoes_produtos = ["Nenhum / Post Institucional"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
             f_produto = c1.selectbox("Sobre qual produto é o post?", opcoes_produtos)
             
             f_formato = c2.selectbox("Formato desejado", ["📸 Foto para o Feed", "🎬 Reels", "📱 Story", "🛒 Atualizar no Site (Odoo)", "🎨 Outro (Banner, Logo...)"])
             
             f_desc = st.text_area("Descrição / Ideia", placeholder="Ex: Fazer um vídeo mostrando a elasticidade do tecido do lençol. Usar música em alta.")
+            
+            f_link_arte = st.text_input("Link da Arte/Pasta (Canva/Drive) - Opcional", placeholder="Ex: https://canva.com/...")
             
             c3, c4 = st.columns(2)
             f_data_agendada = c3.date_input("Para quando precisamos disto? (Prazo/Data do Post)")
@@ -3161,21 +3187,15 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                             import pytz
                             aba_mkt = planilha_mestre.worksheet("MARKETING")
                             
-                            # Gerador Inteligente de ID (Ex: MKT-001)
-                            if df_mkt.empty:
-                                novo_id = "MKT-001"
+                            if df_mkt.empty: novo_id = "MKT-001"
                             else:
                                 ultimo_id = df_mkt['ID_TAREFA'].iloc[-1]
-                                try:
-                                    num = int(ultimo_id.split("-")[1]) + 1
-                                    novo_id = f"MKT-{num:03d}"
-                                except:
-                                    novo_id = f"MKT-{len(df_mkt)+1:03d}"
+                                try: novo_id = f"MKT-{int(ultimo_id.split('-')[1]) + 1:03d}"
+                                except: novo_id = f"MKT-{len(df_mkt)+1:03d}"
                             
                             data_hoje = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
                             data_prazo_str = f_data_agendada.strftime("%d/%m/%Y")
                             
-                            # A ordem exata da sua planilha (A até I)
                             linha_mkt = [
                                 novo_id,               # A: ID_TAREFA
                                 data_hoje,             # B: DATA_PEDIDO
@@ -3184,28 +3204,30 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                 f_desc,                # E: DESCRIÇÃO
                                 data_prazo_str,        # F: DATA_AGENDADA
                                 f_status_inicial,      # G: STATUS
-                                "-",                   # H: LINK_ARTE (Vazio no início)
-                                "-"                    # I: DATA_CONCLUSAO (Vazio no início)
+                                f_link_arte if f_link_arte else "-", # H: LINK_ARTE (Produção)
+                                "-",                   # I: LINK_PUBLICADO (Post final no Insta)
+                                "-"                    # J: DATA_CONCLUSAO
                             ]
                             
                             aba_mkt.append_row(linha_mkt, value_input_option='RAW')
-                            st.success(f"✅ Tarefa {novo_id} registada com sucesso! O Gestor de Marketing já foi notificado (virtualmente)!")
-                            st.cache_data.clear()
-                            st.rerun()
                             
+                            # 💡 RECIBO E REFRESH
+                            st.session_state['recibo_mkt'] = {"acao": "criado", "id": novo_id, "produto": f_produto, "formato": f_formato, "prazo": data_prazo_str}
+                            st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao registar: {e}")
                 else:
                     st.warning("Por favor, preencha a descrição da ideia!")
                     
+    # ==========================================
+    # ABA 2: KANBAN
+    # ==========================================
     with t_kanban:
         st.write("### 📋 Quadro de Produção (Kanban)")
         
         if not df_mkt.empty:
-            # Criamos as 4 colunas visuais do seu fluxo de trabalho
             col_fila, col_prod, col_postar, col_done = st.columns(4)
             
-            # Mapeamento de Status e Cores
             status_map = [
                 ("📥 Fila (Aguardando Início)", col_fila),
                 ("✍️ Em Produção", col_prod),
@@ -3216,20 +3238,21 @@ elif menu_selecionado == "📢 Gestão de Marketing":
             for status_nome, coluna_gui in status_map:
                 with coluna_gui:
                     st.markdown(f"**{status_nome}**")
-                    # Filtra apenas as tarefas desse status
                     tarefas_status = df_mkt[df_mkt['STATUS'] == status_nome]
                     
                     if tarefas_status.empty:
                         st.caption("Vazio")
                     
                     for _, task in tarefas_status.iterrows():
-                        # Cada tarefa vira um card (expander)
                         with st.expander(f"📍 {task['ID_TAREFA']}", expanded=True):
                             st.write(f"**{task['FORMATO']}**")
                             st.caption(f"📅 Prazo: {task['DATA_AGENDADA']}")
                             st.write(f"<small>{task['DESCRIÇÃO']}</small>", unsafe_allow_html=True)
                             
-                            # 🔄 Botão para Mover para a próxima etapa
+                            link_producao = str(task.get('LINK_ARTE', '-'))
+                            if link_producao != "-" and link_producao.startswith("http"):
+                                st.markdown(f"🎨 [**Abrir Arte / Referência**]({link_producao})")
+                            
                             if status_nome != "🚀 Concluído":
                                 fluxo = {
                                     "📥 Fila (Aguardando Início)": "✍️ Em Produção",
@@ -3241,21 +3264,19 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                 if st.button(f"Mover ➡️", key=f"btn_{task['ID_TAREFA']}"):
                                     try:
                                         aba_mkt = planilha_mestre.worksheet("MARKETING")
-                                        # Localiza a linha correta (+2 por causa do cabeçalho e índice 0)
                                         linha_planilha = task.name + 2 
                                         
-                                        # Atualiza Status no Google Sheets (Coluna G)
                                         aba_mkt.update_acell(f"G{linha_planilha}", proximo)
                                         
-                                        # Se finalizou, carimba a data de conclusão (Coluna I)
                                         if proximo == "🚀 Concluído":
                                             import datetime as dt
+                                            import pytz
                                             agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
-                                            aba_mkt.update_acell(f"I{linha_planilha}", agora)
+                                            aba_mkt.update_acell(f"J{linha_planilha}", agora)
                                             
-                                        st.toast(f"Tarefa {task['ID_TAREFA']} movida!")
-                                        st.cache_data.clear()
-                                        st.rerun()
+                                        # 💡 RECIBO E REFRESH
+                                        st.session_state['recibo_mkt'] = {"acao": "movido", "id": task['ID_TAREFA'], "novo_status": proximo}
+                                        st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                                     except Exception as e:
                                         st.error(f"Erro ao mover card: {e}")
         else:
@@ -3295,7 +3316,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
             def renderizar_card_tarefa(task, titulo_tempo):
                 foto_url = buscar_foto_produto(task['PRODUTO_VINCULADO'])
                 
-                # Se achou a foto no Cloudinary, divide a tela (Foto na esquerda, texto na direita)
+                # Se achou a foto no Cloudinary/Drive, divide a tela (Foto na esquerda, texto na direita)
                 if foto_url and foto_url.startswith("http"):
                     c_img, c_txt = st.columns([1, 4])
                     with c_img:
@@ -3345,17 +3366,14 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         st.write("Postou no Instagram? Cole o link aqui para dar baixa oficial e guardar no histórico!")
         
         if not df_mkt.empty:
-            # Filtra o que está em "Falta Postar" ou que já foi "Concluído" mas esqueceu de colocar o link
             df_pendente_link = df_mkt[
                 (df_mkt['STATUS'].str.contains('Falta Postar', case=False, na=False)) | 
-                ((df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)) & (df_mkt['LINK_ARTE'] == "-"))
+                ((df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)) & (df_mkt.get('LINK_PUBLICADO', '-') == "-"))
             ].copy()
             
-            # --- FORMULÁRIO RÁPIDO PARA A BIA DAR BAIXA ---
             with st.container(border=True):
                 st.markdown("#### 🔗 Vincular Link do Instagram")
                 
-                # 💡 A CORREÇÃO: Só abrimos o form se houver algo pendente!
                 if not df_pendente_link.empty:
                     with st.form("form_link_insta", clear_on_submit=True):
                         opcoes_baixa = [f"📍 {r['ID_TAREFA']} - {r['FORMATO']} ({r['PRODUTO_VINCULADO']})" for _, r in df_pendente_link.iterrows()]
@@ -3368,40 +3386,36 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                     try:
                                         aba_mkt = planilha_mestre.worksheet("MARKETING")
                                         id_alvo = tarefa_selecionada.split(" - ")[0].replace("📍 ", "")
-                                        
-                                        # Acha a linha correta na planilha
                                         linha_planilha = df_mkt[df_mkt['ID_TAREFA'] == id_alvo].index[0] + 2
                                         
                                         import datetime as dt
                                         import pytz
                                         agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
                                         
-                                        # Atualiza Status, Link e Data de Conclusão!
-                                        aba_mkt.update_acell(f"G{linha_planilha}", "🚀 Concluído") # Coluna G: Status
-                                        aba_mkt.update_acell(f"H{linha_planilha}", link_post)     # Coluna H: Link
-                                        aba_mkt.update_acell(f"I{linha_planilha}", agora)         # Coluna I: Data Conclusão
+                                        aba_mkt.update_acell(f"G{linha_planilha}", "🚀 Concluído") # Status
+                                        aba_mkt.update_acell(f"I{linha_planilha}", link_post)      # Link Instagram
+                                        aba_mkt.update_acell(f"J{linha_planilha}", agora)          # Data Conclusão
                                         
-                                        st.success("✅ Arte validada! Link salvo e métricas de tempo atualizadas.")
-                                        st.cache_data.clear()
-                                        st.rerun()
+                                        # 💡 RECIBO E REFRESH
+                                        st.session_state['recibo_mkt'] = {"acao": "validado", "id": id_alvo}
+                                        st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                                     except Exception as e:
                                         st.error(f"Erro ao salvar o link: {e}")
                             else:
                                 st.warning("Por favor, cole um link válido (que comece com http).")
                 else:
-                    # 💡 MENSAGEM MOVIDA PARA FORA DO FORM
                     st.success("Tudo em dia! Não há tarefas aguardando link de postagem no momento.")
             
             st.divider()
             
-            # --- TABELA DE HISTÓRICO (A VITRINE DEFINITIVA) ---
             st.write("#### 🏆 Histórico de Sucesso (Portfólio)")
             df_concluidos = df_mkt[df_mkt['STATUS'].str.contains('Concluído', case=False, na=False)].copy()
             
             if not df_concluidos.empty:
-                colunas_mostrar = ['DATA_CONCLUSAO', 'ID_TAREFA', 'PRODUTO_VINCULADO', 'FORMATO', 'LINK_ARTE']
-                df_view = df_concluidos[colunas_mostrar].copy()
-                df_view = df_view.iloc[::-1]
+                colunas_mostrar = ['DATA_CONCLUSAO', 'ID_TAREFA', 'PRODUTO_VINCULADO', 'FORMATO', 'LINK_PUBLICADO']
+                if 'LINK_PUBLICADO' not in df_concluidos.columns: df_concluidos['LINK_PUBLICADO'] = "-"
+                
+                df_view = df_concluidos[colunas_mostrar].copy().iloc[::-1]
                 
                 st.dataframe(
                     df_view,
@@ -3410,10 +3424,9 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                         "ID_TAREFA": "Código",
                         "PRODUTO_VINCULADO": "Produto",
                         "FORMATO": "Formato",
-                        "LINK_ARTE": st.column_config.LinkColumn("Link do Post (Ver)")
+                        "LINK_PUBLICADO": st.column_config.LinkColumn("Ver no Instagram")
                     },
-                    use_container_width=True,
-                    hide_index=True
+                    use_container_width=True, hide_index=True
                 )
             else:
                 st.info("O histórico de postagens aparecerá aqui assim que o primeiro link for salvo.")
@@ -3426,21 +3439,16 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         st.write("Lançou um post errado ou duplicou sem querer? Escolha a demanda abaixo para corrigir os dados ou excluir permanentemente.")
         
         if not df_mkt.empty:
-            # Puxa a lista invertida (para mostrar os mais recentes no topo)
             demandas_recentes = df_mkt.copy().iloc[::-1]
-            
             lista_opcoes = []
             dict_linhas_mkt = {}
             dict_dados_mkt = {}
             
             for idx, r in demandas_recentes.iterrows():
-                # Descobre a linha real na planilha do Google (index original + 2)
                 linha_real = idx + 2
                 id_mkt = str(r.get('ID_TAREFA', ''))
-                
                 texto_item = f"{id_mkt} | {r.get('FORMATO', '')} | Status: {r.get('STATUS', '')}"
                 lista_opcoes.append(texto_item)
-                
                 dict_linhas_mkt[texto_item] = linha_real
                 dict_dados_mkt[texto_item] = r
                 
@@ -3454,8 +3462,6 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                     st.markdown(f"#### 🔄 Atualizar Demanda ({dados_atuais.get('ID_TAREFA', '')})")
                     
                     e_c1, e_c2 = st.columns(2)
-                    
-                    # Tenta achar o produto na lista atual, senão joga pro índice 0
                     opcoes_produtos_edit = ["Nenhum / Post Institucional"] + [f"{k} - {v['nome']}" for k, v in banco_de_produtos.items()]
                     try: idx_prod = opcoes_produtos_edit.index(str(dados_atuais.get('PRODUTO_VINCULADO', '')))
                     except: idx_prod = 0
@@ -3469,8 +3475,6 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                     nova_desc = st.text_area("Descrição da Demanda", value=str(dados_atuais.get('DESCRIÇÃO', '')))
                     
                     e_c3, e_c4 = st.columns(2)
-                    
-                    # Converte a data de texto para objeto datetime para não quebrar o calendário
                     import datetime as dt
                     try: data_atual_obj = dt.datetime.strptime(str(dados_atuais.get('DATA_AGENDADA', '')), "%d/%m/%Y").date()
                     except: data_atual_obj = dt.datetime.now().date()
@@ -3481,14 +3485,17 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                     except: idx_status = 0
                     novo_status = e_c4.selectbox("Status Atual", lista_status, index=idx_status)
                     
-                    novo_link = st.text_input("Link da Arte (se aplicável)", value=str(dados_atuais.get('LINK_ARTE', '-')))
+                    st.write("🔗 **Gestão de Links**")
+                    e_c5, e_c6 = st.columns(2)
+                    novo_link_arte = e_c5.text_input("Link da Arte (Canva/Drive)", value=str(dados_atuais.get('LINK_ARTE', '-')))
+                    novo_link_pub = e_c6.text_input("Link Publicado (Instagram)", value=str(dados_atuais.get('LINK_PUBLICADO', '-')))
                     
                     st.divider()
                     col_btn1, col_btn2 = st.columns([2, 1])
                     salvar = col_btn1.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
                     
                     st.write("---")
-                    confirma_exclusao = st.checkbox("Confirmar que desejo EXCLUIR esta demanda permanentemente")
+                    confirma_exclusao = st.checkbox("Confirmar que desejo EXCLUIR esta demanda")
                     excluir = col_btn2.form_submit_button("🗑️ Excluir", type="secondary", use_container_width=True)
                     
                     if salvar:
@@ -3497,18 +3504,19 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                 aba_mkt = planilha_mestre.worksheet("MARKETING")
                                 nova_data_str = nova_data.strftime("%d/%m/%Y")
                                 
-                                # Dispara as edições nas colunas corretas (C até H)
                                 atualizacoes = [
                                     {'range': f'C{linha_alvo}', 'values': [[novo_produto]]},
                                     {'range': f'D{linha_alvo}', 'values': [[novo_formato]]},
                                     {'range': f'E{linha_alvo}', 'values': [[nova_desc]]},
                                     {'range': f'F{linha_alvo}', 'values': [[nova_data_str]]},
                                     {'range': f'G{linha_alvo}', 'values': [[novo_status]]},
-                                    {'range': f'H{linha_alvo}', 'values': [[novo_link]]}
+                                    {'range': f'H{linha_alvo}', 'values': [[novo_link_arte]]},
+                                    {'range': f'I{linha_alvo}', 'values': [[novo_link_pub]]}
                                 ]
                                 aba_mkt.batch_update(atualizacoes, value_input_option='USER_ENTERED')
                                 
-                                st.success("✅ Demanda atualizada com sucesso!")
+                                # 💡 RECIBO E REFRESH
+                                st.session_state['recibo_mkt'] = {"acao": "editado", "id": dados_atuais.get('ID_TAREFA', '')}
                                 st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao salvar: {e}")
@@ -3518,17 +3526,19 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                             with st.spinner("Apagando registro..."):
                                 try:
                                     aba_mkt = planilha_mestre.worksheet("MARKETING")
-                                    aba_mkt.delete_rows(linha_alvo) # Remove a linha da planilha
+                                    aba_mkt.delete_rows(linha_alvo)
                                     
-                                    st.success("🗑️ Demanda excluída do sistema!")
+                                    # 💡 RECIBO E REFRESH
+                                    st.session_state['recibo_mkt'] = {"acao": "excluido"}
                                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao excluir: {e}")
                         else:
-                            st.warning("⚠️ Você precisa marcar a caixa de confirmação para excluir a tarefa.")
+                            st.warning("⚠️ Marque a caixa de confirmação para excluir a tarefa.")
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
