@@ -695,7 +695,7 @@ if menu_selecionado == "🛒 Vendas":
     # [O código da Borracha Mágica (Edição de Vendas) continua exatamente como você já tinha abaixo deste ponto]
 
 # ==========================================
-    # ✏️ BORRACHA MÁGICA: EDIÇÃO E EXCLUSÃO (COM RADAR)
+    # ✏️ BORRACHA MÁGICA: EDIÇÃO E EXCLUSÃO (COM RADAR E AUDITORIA)
     # ==========================================
     with st.expander("✏️ Corrigir ou Excluir Venda (Radar de Vendas)", expanded=False):
         st.write("Pesquise por uma venda antiga ou escolha uma recente para corrigir cliente, produto, valores ou método de pagamento.")
@@ -765,8 +765,9 @@ if menu_selecionado == "🛒 Vendas":
                         
                         venc_atual_str = str(linha_dados[21]) if len(linha_dados) > 21 and str(linha_dados[21]).strip() != "-" else ""
                         import datetime as dt
+                        import pytz
                         try: venc_atual_dt = dt.datetime.strptime(venc_atual_str, "%d/%m/%Y").date()
-                        except: venc_atual_dt = dt.datetime.now().date()
+                        except: venc_atual_dt = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).date()
                         
                         status_atual = str(linha_dados[22]).strip() if len(linha_dados) > 22 and str(linha_dados[22]).strip() != "" else "Pago"
 
@@ -829,10 +830,7 @@ if menu_selecionado == "🛒 Vendas":
                                     num_parc_final = novo_num_parc if eh_parc == "Sim" else 1
                                     venc_final = novo_venc.strftime("%d/%m/%Y") if eh_parc == "Sim" else "-"
                                     
-                                    # 💡 AQUI É A MÁGICA: Em vez de sobrescrever as fórmulas de controle da planilha com zeros e números fixos (S, T, U),
-                                    # eu reenvio as suas fórmulas originais de volta, para o Sheets recalcular o valor de cada parcela e vista automaticamente!
-                                    # E insiro o STATUS NOVO na coluna W.
-                                    
+                                    # MÁGICA MANTIDA: Reenvio de Fórmulas e Status (W)
                                     atualizacoes = [
                                         {'range': f'C{linha_real}', 'values': [[n_cod_cli]]},
                                         {'range': f'D{linha_real}', 'values': [[n_nome_cli]]},
@@ -845,18 +843,24 @@ if menu_selecionado == "🛒 Vendas":
                                         {'range': f'O{linha_real}', 'values': [[novo_metodo]]},
                                         {'range': f'P{linha_real}', 'values': [[eh_parc]]},
                                         {'range': f'Q{linha_real}', 'values': [[num_parc_final]]},
-                                        
-                                        # Recriando a matemática da Venda
                                         {'range': f'S{linha_real}', 'values': [[n_t_liq / num_parc_final if eh_parc == "Sim" else 0]]},
                                         {'range': f'T{linha_real}', 'values': [[n_t_liq if eh_parc == "Não" else 0]]},
                                         {'range': f'U{linha_real}', 'values': [[n_t_liq if eh_parc == "Sim" else 0]]},
-                                        
                                         {'range': f'V{linha_real}', 'values': [[venc_final]]},
-                                        {'range': f'W{linha_real}', 'values': [[novo_status]]} # O SEU STATUS CORRIGIDO!
+                                        {'range': f'W{linha_real}', 'values': [[novo_status]]} 
                                     ]
                                     
                                     aba_vendas.batch_update(atualizacoes, value_input_option='USER_ENTERED')
                                     
+                                    # 🛡️ LANÇAMENTO NO LOG DE AUDITORIA (NOVO)
+                                    try:
+                                        aba_log = planilha_mestre.worksheet("LOG_AUDITORIA")
+                                        data_agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
+                                        usuario = st.session_state.get('usuario_logado', 'Sistema/Bia')
+                                        detalhes_log = f"Alterou para: {nova_qtd}x {n_nome_prod}. Total: R$ {n_t_liq:.2f}. Pgt: {novo_metodo}."
+                                        aba_log.append_row([data_agora, usuario, "EDIÇÃO", f"Linha {linha_real}", n_nome_cli, detalhes_log], value_input_option='USER_ENTERED')
+                                    except: pass
+
                                     st.session_state['recibo_correcao'] = {
                                         "tipo": "editado",
                                         "cliente": n_nome_cli,
@@ -873,6 +877,15 @@ if menu_selecionado == "🛒 Vendas":
                             if excluir:
                                 if confirma_exclusao:
                                     try:
+                                        # 🛡️ LANÇAMENTO NO LOG DE AUDITORIA ANTES DE APAGAR (NOVO)
+                                        try:
+                                            aba_log = planilha_mestre.worksheet("LOG_AUDITORIA")
+                                            data_agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
+                                            usuario = st.session_state.get('usuario_logado', 'Sistema/Bia')
+                                            detalhes_log = f"Apagou a venda de {qtd_atual}x {nome_prod_atual} (R$ {val_atual})"
+                                            aba_log.append_row([data_agora, usuario, "EXCLUSÃO", f"Linha {linha_real}", nome_cli_atual, detalhes_log], value_input_option='USER_ENTERED')
+                                        except: pass 
+
                                         aba_vendas.delete_rows(linha_real)
                                         st.session_state['recibo_correcao'] = {"tipo": "excluido", "linha": linha_real}
                                         st.cache_data.clear()
@@ -894,7 +907,7 @@ if menu_selecionado == "🛒 Vendas":
         recibo = st.session_state['recibo_correcao']
         
         if recibo['tipo'] == "editado":
-            st.success("✅ Venda atualizada na planilha com sucesso!")
+            st.success("✅ Venda atualizada e registrada na auditoria com sucesso!")
             st.markdown("#### 📋 Resumo do Ajuste")
             tabela_resumo = f"""
 | Informação | Registro Corrigido |
@@ -908,11 +921,28 @@ if menu_selecionado == "🛒 Vendas":
         
         elif recibo['tipo'] == "excluido":
             st.warning(f"🗑️ A venda da Linha {recibo['linha']} foi excluída permanentemente.")
-            st.info("A planilha financeira já foi reajustada automaticamente.")
+            st.info("A planilha financeira e o log de auditoria foram atualizados.")
 
         if st.button("✖️ Fechar Aviso", key="fechar_aviso_correcao"):
             del st.session_state['recibo_correcao']
             st.rerun()
+
+    # ==========================================
+    # 🛡️ VISOR DE AUDITORIA (Histórico de Alterações)
+    # ==========================================
+    st.markdown("---")
+    with st.expander("🛡️ Histórico de Auditoria (Últimas Modificações)", expanded=False):
+        try:
+            aba_log_view = planilha_mestre.worksheet("LOG_AUDITORIA")
+            dados_log_view = aba_log_view.get_all_values()
+            if len(dados_log_view) > 1:
+                import pandas as pd
+                df_log_view = pd.DataFrame(dados_log_view[1:], columns=dados_log_view[0])
+                st.dataframe(df_log_view.iloc[::-1].head(10), use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma modificação ou exclusão foi registrada até o momento.")
+        except:
+            st.warning("Crie a aba 'LOG_AUDITORIA' na planilha Mestre para habilitar o painel de histórico.")
             
 # ==========================================
 # --- SEÇÃO 2: FINANCEIRO (INTELIGÊNCIA 360) ---
@@ -3749,6 +3779,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
