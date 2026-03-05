@@ -467,13 +467,18 @@ if menu_selecionado == "🛒 Vendas":
         # 1. Seleção do Produto
         p_sel = c_p1.selectbox(
             "Item do Estoque", 
-            sorted(lista_selecao_limpa), # Deixa em ordem alfabética/numérica
+            sorted(lista_selecao_limpa), 
             key="venda_produto_sel"
         )
         
-        # 2. Recuperação do preço direto da planilha (usando o ID do produto selecionado)
-        cod_p_temp = p_sel.split(" - ")[0]
-        preco_da_planilha = limpar_v(banco_de_produtos.get(cod_p_temp, {}).get('venda', 0.0))
+        # ✅ TRAVA DE SEGURANÇA: Só tenta o split se p_sel não for nulo
+        if p_sel:
+            cod_p_temp = p_sel.split(" - ")[0]
+            # 2. Recuperação do preço direto da planilha
+            preco_da_planilha = limpar_v(banco_de_produtos.get(cod_p_temp, {}).get('venda', 0.0))
+        else:
+            st.warning("⚠️ O estoque parece estar vazio ou o produto não foi carregado. Tente sincronizar a planilha.")
+            st.stop() # Interrompe a execução deste bloco para evitar o erro abaixo
         
         # 3. Campos de entrada
         qtd_v = c_p2.number_input("Qtd", value=1, min_value=1, key="venda_qtd_input")
@@ -3741,5 +3746,6 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
