@@ -608,13 +608,16 @@ if menu_selecionado == "🛒 Vendas":
                                 f_n = '=SE(INDIRETO("L"&LIN())=""; ""; SEERRO(INDIRETO("M"&LIN()) / INDIRETO("L"&LIN()); ""))'
                                 f_r = '=SE(INDIRETO("L"&LIN())=""; ""; SE(INDIRETO("P"&LIN())="Não"; INDIRETO("L"&LIN()); 0))'
                                 
+                                # 💡 SUA FÓRMULA DE SALDO DEVEDOR
+                                f_u = '=SE(INDIRETO("L"&LIN())=""; ""; SE(ARRUMAR(MINÚSCULA(INDIRETO("P"&LIN())))="não"; 0; MÁXIMO(0; INDIRETO("L"&LIN()) - INDIRETO("T"&LIN()))))'
+                                
                                 linha = [
                                     "", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, 
                                     item['cod'], item['nome'], item['custo'], item['qtd'], item['preco'], 
                                     desc_percentual, f_k, f_l, f_m, f_n, metodo, eh_parc, n_p, f_r, 
                                     t_liq_item/n_p if eh_parc=="Sim" else 0, 
                                     t_liq_item if eh_parc=="Não" else 0, 
-                                    t_liq_item if eh_parc=="Sim" else 0, 
+                                    f_u,  # 🚀 AQUI! O robô agora injeta a fórmula na Coluna U, em vez de um número fixo!
                                     detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", 
                                     "Pendente" if eh_parc=="Sim" else "Pago", f_atraso
                                 ]
@@ -3746,6 +3749,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
