@@ -3487,9 +3487,10 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                             agora = dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M")
                                             aba_mkt.update_acell(f"J{linha_planilha}", agora)
                                             
-                                        # 💡 MOTOR DO RECIBO E REFRESH
+                                        # 💡 O SEGREDO ESTÁ AQUI: Atualização rápida e contínua sem quebrar a conexão!
                                         st.session_state['recibo_mkt'] = {"acao": "movido", "id": task['ID_TAREFA'], "novo_status": proximo}
-                                        st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                                        st.cache_data.clear() 
+                                        st.rerun() 
                                     except Exception as e:
                                         st.error(f"Erro ao mover card: {e}")
         else:
@@ -3779,6 +3780,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
