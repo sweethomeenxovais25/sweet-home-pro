@@ -3416,7 +3416,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                             
                             # 💡 MOTOR DO RECIBO E REFRESH
                             st.session_state['recibo_mkt'] = {"acao": "criado", "id": novo_id, "produto": f_produto, "formato": f_formato, "prazo": data_prazo_str}
-                            st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                            st.cache_data.clear(); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao registar: {e}")
                 else:
@@ -3489,8 +3489,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                             
                                         # 💡 O SEGREDO ESTÁ AQUI: Atualização rápida e contínua sem quebrar a conexão!
                                         st.session_state['recibo_mkt'] = {"acao": "movido", "id": task['ID_TAREFA'], "novo_status": proximo}
-                                        st.cache_data.clear() 
-                                        st.rerun() 
+                                        st.cache_data.clear(); st.rerun() 
                                     except Exception as e:
                                         st.error(f"Erro ao mover card: {e}")
         else:
@@ -3622,7 +3621,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                         
                                         # 💡 MOTOR DO RECIBO E REFRESH
                                         st.session_state['recibo_mkt'] = {"acao": "validado", "id": id_alvo}
-                                        st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                                        st.cache_data.clear(); st.rerun()
                                     except Exception as e:
                                         st.error(f"Erro ao salvar o link: {e}")
                             else:
@@ -3759,7 +3758,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                 
                                 # 💡 MOTOR DO RECIBO E REFRESH
                                 st.session_state['recibo_mkt'] = {"acao": "editado", "id": dados_atuais.get('ID_TAREFA', '')}
-                                st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                                st.cache_data.clear(); st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao salvar: {e}")
                                 
@@ -3772,7 +3771,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                                     
                                     # 💡 MOTOR DO RECIBO E REFRESH
                                     st.session_state['recibo_mkt'] = {"acao": "excluido"}
-                                    st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                                    st.cache_data.clear(); st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao excluir: {e}")
                         else:
@@ -3780,6 +3779,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
