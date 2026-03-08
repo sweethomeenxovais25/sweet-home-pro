@@ -3778,12 +3778,551 @@ elif menu_selecionado == "📢 Gestão de Marketing":
                             st.warning("⚠️ Marque a caixa de confirmação para excluir a tarefa.")
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
+
+# ==========================================================
+# 🏛️ SEÇÃO 8: CONTABILIDADE E INTELIGÊNCIA FISCAL (MEI)
+# ==========================================================
+elif menu_selecionado == "🏛️ Contabilidade e MEI":
+    st.title("🏛️ Inteligência Fiscal e MEI")
+    st.write("Proteção tributária, termômetro de faturamento e cofre de guias do Simples Nacional.")
+
+    import pytz
+    from datetime import datetime
+    import pandas as pd
+
+    # ==========================================
+    # 📅 SELETOR DINÂMICO DE ANO (O Cérebro do Módulo)
+    # ==========================================
+    ano_atual_real = datetime.now(pytz.timezone('America/Sao_Paulo')).year
+    anos_disponiveis = list(range(2023, ano_atual_real + 2))
+    
+    col_ano1, col_ano2 = st.columns([1, 4])
+    ano_selecionado = col_ano1.selectbox("📅 Selecione o Ano Base:", reversed(anos_disponiveis), index=1)
+    
+    ano_declaracao = ano_selecionado - 1 
+
+    # ==========================================
+    # 🌡️ TERMÔMETRO DE FATURAMENTO (LEI DO MEI)
+    # ==========================================
+    st.divider()
+    st.write(f"### 🌡️ Termômetro de Faturamento ({ano_selecionado})")
+    st.caption("Acompanhamento do limite legal do MEI (R$ 81.000,00 anuais) para evitar desenquadramento e multas.")
+
+    # Carrega a aba CONTABILIDADE
+    try:
+        aba_contabilidade = planilha_mestre.worksheet("CONTABILIDADE")
+        dados_cont = aba_contabilidade.get_all_values()
+        df_cont = pd.DataFrame(dados_cont[1:], columns=dados_cont[0]) if len(dados_cont) > 1 else pd.DataFrame()
+    except:
+        df_cont = pd.DataFrame()
+
+    if not df_vendas_hist.empty:
+        df_termometro = df_vendas_hist.copy()
         
+        col_data_venda = 'DATA DA VENDA' if 'DATA DA VENDA' in df_termometro.columns else df_termometro.columns[1] 
+        df_termometro['DATA_DT'] = pd.to_datetime(df_termometro[col_data_venda], format='%d/%m/%Y', errors='coerce')
+        
+        vendas_ano_foco = df_termometro[df_termometro['DATA_DT'].dt.year == ano_selecionado]
+        
+        vendas_validas = vendas_ano_foco[
+            (~vendas_ano_foco['CÓD. CLIENTE'].str.upper().str.contains("TOTAIS", na=False)) &
+            (vendas_ano_foco.iloc[:, 22].astype(str).str.strip().str.lower() != "cancelado")
+        ].copy()
 
+        vendas_validas['VALOR_BRUTO'] = vendas_validas.iloc[:, 11].apply(limpar_v) 
+        faturamento_atual = vendas_validas['VALOR_BRUTO'].sum()
+        
+        limite_mei = 81000.00
+        percentual_atingido = (faturamento_atual / limite_mei) * 100 if limite_mei > 0 else 0
 
+        if percentual_atingido < 70:
+            cor_termo = "#28a745"; status_termo = "🟢 **Zona Segura:** Faturamento dentro da margem legal."
+        elif percentual_atingido < 90:
+            cor_termo = "#ffa500"; status_termo = "🟡 **Atenção:** Aproximando-se do limite do MEI. Monitore de perto."
+        else:
+            cor_termo = "#ff4b4b"; status_termo = "🔴 **Risco de Desenquadramento:** Limite estourando! Fale com um contador."
 
+        c_termo1, c_termo2, c_termo3 = st.columns([1, 1, 1])
+        c_termo1.metric(f"Faturado em {ano_selecionado}", f"R$ {faturamento_atual:,.2f}")
+        c_termo2.metric("Teto Máximo MEI", f"R$ {limite_mei:,.2f}")
+        c_termo3.metric("Margem Restante", f"R$ {limite_mei - faturamento_atual:,.2f}")
 
+        progresso_visual = min(percentual_atingido / 100, 1.0)
+        st.markdown(
+            f"""
+            <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 15px;">
+                <div style="width: {progresso_visual*100}%; background-color: {cor_termo}; height: 15px; border-radius: 10px; transition: width 0.5s ease-in-out;">
+                </div>
+            </div>
+            <div style="margin-top: 5px; font-weight: bold; color: {cor_termo};">{percentual_atingido:.1f}% do teto atingido no ano.</div>
+            """, 
+            unsafe_allow_html=True
+        )
+        st.write(status_termo)
+        
+        # 📝 DECLARAÇÃO ANUAL (DASN-SIMEI)
+        st.write("")
+        with st.expander(f"📝 Gerar e Comprovar Declaração Anual (DASN-SIMEI referente a {ano_declaracao})", expanded=False):
+            st.info(f"O Governo exige que você declare até 31 de maio de {ano_selecionado} tudo o que foi faturado em **{ano_declaracao}**.")
+            
+            vendas_ano_anterior = df_termometro[df_termometro['DATA_DT'].dt.year == ano_declaracao].copy()
+            vendas_ano_anterior['VALOR_BRUTO'] = vendas_ano_anterior.iloc[:, 11].apply(limpar_v)
+            faturamento_passado = vendas_ano_anterior['VALOR_BRUTO'].sum()
+            
+            c_dasn1, c_dasn2 = st.columns([1, 1.5])
+            with c_dasn1:
+                st.markdown(f"##### Valor Exato para declarar:\n### **R$ {faturamento_passado:,.2f}**")
+                st.link_button("🌐 Acessar Portal da Receita Federal", "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Default.aspx", type="primary")
+            
+            with c_dasn2:
+                st.markdown("##### 🔒 Anexar Comprovante de Entrega")
+                with st.form("form_dasn", clear_on_submit=True):
+                    dasn_arquivo = st.file_uploader("Recibo DASN (PDF/Foto)", type=['pdf', 'png', 'jpg'])
+                    if st.form_submit_button("Salvar Recibo DASN", type="secondary"):
+                        if dasn_arquivo:
+                            with st.spinner("Salvando..."):
+                                nome_doc = f"DASN_SIMEI_{ano_declaracao}_entregue_em_{ano_selecionado}"
+                                id_cloud, link_cloud = upload_para_cloudinary(dasn_arquivo.getvalue(), nome_doc, "Contabilidade")
+                                if link_cloud:
+                                    try:
+                                        data_agora = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
+                                        # Formato Novo: TIPO | COMP | VENC | V_BASE | V_PAGO | PREJ | ATRASO | STATUS | DATA | LINK
+                                        aba_contabilidade.append_row(["DASN (Declaração Anual)", f"Ano-Calendário {ano_declaracao}", "31/05", 0.00, 0.00, 0.00, 0, "ENTREGUE", data_agora, link_cloud], value_input_option='USER_ENTERED')
+                                        st.success(f"✅ Declaração salva com sucesso!"); st.cache_data.clear(); st.rerun()
+                                    except Exception as e: st.error(f"Erro: {e}")
+                        else:
+                            st.warning("Anexe o arquivo primeiro.")
+    else:
+        st.info("Aguardando registro de vendas para calcular o termômetro.")
 
+    # ==========================================
+    # 💸 GESTÃO MENSAL (GUIAS DAS) & RALOS FINANCEIROS
+    # ==========================================
+    st.divider()
+    st.write(f"### 💸 Imposto Mensal (DAS MEI) - {ano_selecionado}")
+    
+    meses_ano = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+    
+    # Processamento do Motor de Atrasos e Prejuízos (BLINDADO CONTRA ESPAÇOS INVISÍVEIS)
+    total_juros_ano = 0.0
+    meses_info = {} # Dicionário para guardar o status e atraso de cada mês
 
+    if not df_cont.empty:
+        # Garante que as colunas numéricas existam
+        if 'PREJUIZO_JUROS' in df_cont.columns:
+            df_cont['PREJUIZO_JUROS'] = pd.to_numeric(df_cont['PREJUIZO_JUROS'].astype(str).str.replace('R$', '').str.replace(',', '.'), errors='coerce').fillna(0.0)
+            df_cont['DIAS_ATRASO'] = pd.to_numeric(df_cont['DIAS_ATRASO'], errors='coerce').fillna(0)
+            df_cont['VALOR_PAGO'] = pd.to_numeric(df_cont['VALOR_PAGO'].astype(str).str.replace('R$', '').str.replace(',', '.'), errors='coerce').fillna(0.0)
+        else:
+            df_cont['PREJUIZO_JUROS'] = 0.0
+            df_cont['DIAS_ATRASO'] = 0
+            df_cont['VALOR_PAGO'] = 0.0
 
+        # 💡 O SEGREDO AQUI: Limpa espaços e formatação das colunas para busca perfeita
+        df_cont['TIPO_LIMPO'] = df_cont['TIPO_GUIA'].astype(str).str.strip()
+        df_cont['COMP_LIMPA'] = df_cont['COMPETENCIA'].astype(str).str.strip()
 
+        df_guias_ano = df_cont[
+            (df_cont['TIPO_LIMPO'] == "DAS MEI (Mensal)") & 
+            (df_cont['COMP_LIMPA'].str.contains(str(ano_selecionado), na=False))
+        ].copy()
+        
+        for _, row in df_guias_ano.iterrows():
+            # Extrai o mês, arranca espaços extras e joga para MINÚSCULO (ex: "janeiro")
+            mes_banco = str(row['COMP_LIMPA']).split("/")[0].strip().lower()
+            prejuizo = float(row['PREJUIZO_JUROS'])
+            atraso = int(row['DIAS_ATRASO'])
+            total_juros_ano += prejuizo
+            
+            # Salva na memória com a chave limpa e minúscula
+            meses_info[mes_banco] = {"pago": True, "atraso": atraso, "prejuizo": prejuizo}
+
+    # 💡 DASHBOARD DO "RALO FINANCEIRO"
+    c_ralo1, c_ralo2 = st.columns([2, 1])
+    with c_ralo2:
+        if total_juros_ano > 0:
+            st.metric("🚨 Ralo Financeiro (Juros/Multas)", f"R$ {total_juros_ano:,.2f}", help="Dinheiro perdido pagando guias em atraso. Esse valor foi subtraído do seu Lucro Líquido.")
+        else:
+            st.metric("🏆 Economia com Multas", "R$ 0,00", help="Parabéns! Você pagou tudo em dia neste ano e não perdeu dinheiro com juros.")
+
+    # 💡 CHECKLIST DE REGULARIDADE DOS 12 MESES (INTELIGENTE)
+    with c_ralo1:
+        st.write("**Painel de Regularidade (Checklist Mensal)**")
+        cols_check = st.columns(12)
+        for i, mes in enumerate(meses_ano):
+            
+            # 💡 NA HORA DE PROCURAR: Converte o nome do mês para minúsculo também!
+            info = meses_info.get(mes.lower(), {"pago": False, "atraso": 0, "prejuizo": 0.0})
+            
+            if info["pago"]:
+                if info["atraso"] > 0:
+                    cor_check = "#ffa500" # Amarelo (Pago com atraso)
+                    texto_check = "⚠️"
+                    dica = f"{mes}: Pago com {info['atraso']} dias de atraso (R$ {info['prejuizo']:.2f} de juros)."
+                else:
+                    cor_check = "#28a745" # Verde (Pago em dia)
+                    texto_check = "✓"
+                    dica = f"{mes}: Pago rigorosamente em dia!"
+                cor_fonte = "white"
+            else:
+                cor_check = "#e0e0e0" # Cinza (Não pago)
+                texto_check = "!"
+                cor_fonte = "#555"
+                dica = f"{mes}: Pendente"
+            
+            cols_check[i].markdown(
+                f"""<div style="background-color: {cor_check}; color: {cor_fonte}; padding: 5px; border-radius: 5px; text-align: center; font-size: 11px; font-weight: bold; margin-bottom: 10px;" title="{dica}">{mes[:3].upper()}<br>{texto_check}</div>""", 
+                unsafe_allow_html=True
+            )
+
+    st.write("")
+    c_guia1, c_guia2 = st.columns([1, 1.5])
+    
+    with c_guia1:
+        st.write("#### ➕ Registrar Pagamento do DAS")
+        with st.form("form_novo_das", clear_on_submit=True):
+            tipo_guia = "DAS MEI (Mensal)"
+            comp_mes = st.selectbox("Mês de Referência", meses_ano)
+            
+            st.markdown("<small><i>O vencimento legal do DAS é sempre dia 20 do mês seguinte à competência.</i></small>", unsafe_allow_html=True)
+            
+            # CÁLCULO DE DATAS E VALORES
+            c_d1, c_d2 = st.columns(2)
+            dt_vencimento = c_d1.date_input("Data de Vencimento Original")
+            dt_pagamento = c_d2.date_input("Data em que foi Pago")
+            
+            c_v1, c_v2 = st.columns(2)
+            valor_base = c_v1.number_input("Valor da Guia (R$)", value=0.00, min_value=0.0, format="%.2f", help="Valor sem juros.")
+            valor_pago = c_v2.number_input("Efetivamente Pago (R$)", value=0.00, min_value=0.0, format="%.2f", help="Se pagou atrasado, insira o valor final com as multas aqui.")
+            
+            comp_arquivo = st.file_uploader("Anexar Comprovante (PDF/Foto)", type=['pdf', 'png', 'jpg'])
+            
+            if st.form_submit_button("Confirmar Pagamento e Integrar 🔒", type="primary"):
+                if comp_arquivo:
+                    with st.spinner("Calculando impacto financeiro e arquivando..."):
+                        
+                        # 🧮 Motor Matemático de Atraso
+                        diferenca_dias = (dt_pagamento - dt_vencimento).days
+                        dias_atraso = diferenca_dias if diferenca_dias > 0 else 0
+                        prejuizo_juros = valor_pago - valor_base if valor_pago > valor_base else 0.0
+                        
+                        nome_doc = f"DAS_{comp_mes}_{ano_selecionado}_Atraso{dias_atraso}d"
+                        id_cloud, link_cloud = upload_para_cloudinary(comp_arquivo.getvalue(), nome_doc, "Contabilidade")
+                        
+                        if link_cloud:
+                            try:
+                                import pytz
+                                fuso = pytz.timezone('America/Sao_Paulo')
+                                data_agora = datetime.now(fuso).strftime("%d/%m/%Y")
+                                
+                                # 1️⃣ Salva na aba CONTABILIDADE
+                                linha_cont = [
+                                    tipo_guia, f"{comp_mes}/{ano_selecionado}", dt_vencimento.strftime("%d/%m/%Y"), 
+                                    valor_base, valor_pago, prejuizo_juros, dias_atraso, "PAGO", 
+                                    dt_pagamento.strftime("%d/%m/%Y"), link_cloud
+                                ]
+                                aba_contabilidade.append_row(linha_cont, value_input_option='USER_ENTERED')
+                                
+                                # 2️⃣ INTEGRAÇÃO GIGANTE: Lança o valor pago diretamente na aba DESPESAS (DRE)
+                                try:
+                                    aba_despesas = planilha_mestre.worksheet("DESPESAS")
+                                    obs_desp = f"Ref: {comp_mes}/{ano_selecionado}."
+                                    if prejuizo_juros > 0:
+                                        obs_desp += f" Inclui R$ {prejuizo_juros:.2f} de Multa/Juros."
+                                    
+                                    linha_desp = [
+                                        data_agora, dt_vencimento.strftime("%d/%m/%Y"), 
+                                        f"Imposto Federal (DAS) - {comp_mes}/{ano_selecionado}", 
+                                        "Impostos / Taxas", valor_pago, "Pago", dt_pagamento.strftime("%d/%m/%Y"), obs_desp
+                                    ]
+                                    aba_despesas.append_row(linha_desp, value_input_option='USER_ENTERED')
+                                except Exception as err_d: 
+                                    print(f"Erro ao integrar com despesas: {err_d}")
+                                
+                                # 3️⃣ INTEGRAÇÃO: Salva no cofre de Documentos
+                                try:
+                                    aba_docs_global = planilha_mestre.worksheet("DOCUMENTOS")
+                                    aba_docs_global.append_row([datetime.now(fuso).strftime("%d/%m/%Y %H:%M"), "Guia DAS / Imposto", nome_doc, id_cloud, link_cloud, "Receita Federal", "-"], value_input_option='USER_ENTERED')
+                                except: pass 
+                                
+                                if prejuizo_juros > 0:
+                                    st.warning(f"Pagamento registrado! O atraso de {dias_atraso} dias gerou R$ {prejuizo_juros:.2f} de prejuízo, que já foi abatido do seu Lucro Líquido no Painel Financeiro.")
+                                else:
+                                    st.success(f"✅ Guia de {comp_mes} contabilizada e integrada ao Caixa com sucesso!")
+                                
+                                st.cache_data.clear(); st.rerun()
+                            except Exception as e: st.error(f"Erro na integração: {e}")
+                        else: st.error("Falha no upload do arquivo.")
+                else:
+                    st.warning("⚠️ Anexe o comprovante obrigatório para registro.")
+
+    with c_guia2:
+        st.write("#### 🗂️ Arquivo Contábil")
+        if not df_cont.empty:
+            df_guias_view = df_cont[df_cont['TIPO_GUIA'] == "DAS MEI (Mensal)"].copy().iloc[::-1]
+            
+            if not df_guias_view.empty:
+                st.dataframe(
+                    df_guias_view[['COMPETENCIA', 'DATA_PAGAMENTO', 'VALOR_PAGO', 'PREJUIZO_JUROS', 'LINK_COMPROVANTE']],
+                    column_config={
+                        "COMPETENCIA": "Mês/Ano", 
+                        "DATA_PAGAMENTO": "Data Pgto",
+                        "VALOR_PAGO": st.column_config.NumberColumn("Total Pago", format="R$ %.2f"),
+                        "PREJUIZO_JUROS": st.column_config.NumberColumn("⚠️ Multa", format="R$ %.2f"),
+                        "LINK_COMPROVANTE": st.column_config.LinkColumn("PDF/Comprovante")
+                    },
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.info("Nenhuma guia paga registrada.")
+        else:
+            st.info("Nenhuma guia paga registrada.")
+
+    # ==========================================
+    # ✏️ BORRACHA MÁGICA: CONTABILIDADE E IMPOSTOS
+    # ==========================================
+    st.divider()
+    
+    # Memória para abrir a sanfona sozinha quando houver ação
+    abriu_borracha_cont = True if 'recibo_cont' in st.session_state and st.session_state['recibo_cont'] else False
+
+    with st.expander("✏️ Corrigir ou Excluir Lançamento Contábil", expanded=abriu_borracha_cont):
+        
+        # 🧾 RECIBO LOCALIZADO
+        if abriu_borracha_cont:
+            r = st.session_state['recibo_cont']
+            if r['acao'] == "editado":
+                st.success("✏️ Guia atualizada com sucesso e juros recalculados!")
+            elif r['acao'] == "excluido":
+                st.warning("🗑️ Guia destruída. O comprovante foi apagado da nuvem (Cloudinary) e do Cofre Central.")
+            
+            if st.button("✖️ Fechar Aviso", key="fechar_aviso_cont"):
+                st.session_state['recibo_cont'] = None
+                st.rerun()
+            st.divider()
+
+        st.write("Lançou um valor errado ou duplicou o pagamento do mês? Escolha abaixo para corrigir as datas/valores ou destruir o registro permanentemente.")
+
+        if not df_cont.empty:
+            df_cont_edit = df_cont.copy()
+            df_cont_edit['LINHA_REAL'] = df_cont_edit.index + 2
+            df_cont_edit = df_cont_edit.iloc[::-1] # Mostra do mais recente pro mais antigo
+
+            # 💡 O FILTRO INTELIGENTE MOVIDO PARA CIMA (Curando o menu e as caixas)
+            def ler_moeda_seguro(valor):
+                v = str(valor).replace('R$', '').replace(' ', '').strip()
+                if '.' in v and ',' in v:
+                    v = v.replace('.', '').replace(',', '.')
+                elif ',' in v:
+                    v = v.replace(',', '.')
+                try: return float(v)
+                except: return 0.0
+
+            opcoes_cont = []
+            dict_cont = {}
+
+            for _, r in df_cont_edit.iterrows():
+                tipo = str(r.get('TIPO_GUIA', ''))
+                comp = str(r.get('COMPETENCIA', ''))
+                
+                # 💡 AQUI: Usamos a função segura para extrair o valor real da planilha
+                val = ler_moeda_seguro(r.get('VALOR_PAGO', 0))
+                
+                data_pg = str(r.get('DATA_PAGAMENTO', ''))
+
+                # Formata bonito para o padrão Brasileiro (Ex: R$ 57,90)
+                val_formatado = f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                
+                texto = f"📅 {data_pg} | {tipo} ({comp}) | {val_formatado}"
+                opcoes_cont.append(texto)
+                dict_cont[texto] = r
+
+            guia_selecionada = st.selectbox("Selecione o registro contábil:", ["---"] + opcoes_cont)
+
+            if guia_selecionada != "---":
+                dados_atuais = dict_cont[guia_selecionada]
+                linha_alvo = dados_atuais['LINHA_REAL']
+
+                with st.form("form_edita_cont"):
+                    st.markdown(f"#### 🔄 Editando: {dados_atuais.get('TIPO_GUIA', '')} - {dados_atuais.get('COMPETENCIA', '')}")
+
+                    c_e1, c_e2 = st.columns(2)
+                    import datetime as dt
+                    
+                    # Carrega as datas de forma segura
+                    try: data_venc_obj = dt.datetime.strptime(str(dados_atuais.get('VENCIMENTO', '')), "%d/%m/%Y").date()
+                    except: data_venc_obj = dt.datetime.now().date()
+
+                    try: data_pag_obj = dt.datetime.strptime(str(dados_atuais.get('DATA_PAGAMENTO', '')), "%d/%m/%Y").date()
+                    except: data_pag_obj = dt.datetime.now().date()
+
+                    novo_venc = c_e1.date_input("Data de Vencimento Original", value=data_venc_obj)
+                    novo_pag = c_e2.date_input("Data Efetiva do Pagamento", value=data_pag_obj)
+
+                    c_e3, c_e4 = st.columns(2)
+                    
+                    # 💡 O FILTRO INTELIGENTE ANTI-BUG DO MILIONÁRIO
+                    def ler_moeda_seguro(valor):
+                        v = str(valor).replace('R$', '').replace(' ', '').strip()
+                        # Se tem ponto e vírgula (ex: 1.500,00), tira o ponto e troca vírgula por ponto
+                        if '.' in v and ',' in v:
+                            v = v.replace('.', '').replace(',', '.')
+                        # Se só tem vírgula (ex: 57,90), troca por ponto
+                        elif ',' in v:
+                            v = v.replace(',', '.')
+                        # Se só tem ponto (ex: 57.90), já tá pronto pro Python e ele não mexe!
+                        try: return float(v)
+                        except: return 0.0
+
+                    val_base_atual = ler_moeda_seguro(dados_atuais.get('VALOR_BASE', 0))
+                    val_pago_atual = ler_moeda_seguro(dados_atuais.get('VALOR_PAGO', 0))
+
+                    novo_v_base = c_e3.number_input("Valor Original (Sem Juros)", value=val_base_atual, min_value=0.0, format="%.2f")
+                    novo_v_pago = c_e4.number_input("Valor Efetivamente Pago", value=val_pago_atual, min_value=0.0, format="%.2f")
+
+                    st.divider()
+                    col_btn1, col_btn2 = st.columns([2, 1])
+                    salvar = col_btn1.form_submit_button("💾 Recalcular e Salvar", type="primary", use_container_width=True)
+
+                    st.write("---")
+                    confirma_exclusao = st.checkbox("Confirmar DESTRUIÇÃO TOTAL deste registro (Apaga a imagem da Nuvem)")
+                    excluir = col_btn2.form_submit_button("🗑️ Destruir Guia", type="secondary", use_container_width=True)
+
+                    if salvar:
+                        with st.spinner("Recalculando prejuízos e atualizando banco de dados..."):
+                            try:
+                                # O MÓDULO RECALCULA A MULTA AUTOMATICAMENTE NA EDIÇÃO
+                                diferenca_dias = (novo_pag - novo_venc).days
+                                novo_atraso = diferenca_dias if diferenca_dias > 0 else 0
+                                novo_prejuizo = novo_v_pago - novo_v_base if novo_v_pago > novo_v_base else 0.0
+
+                                aba_cont_edit = planilha_mestre.worksheet("CONTABILIDADE")
+
+                                atualizacoes = [
+                                    {'range': f'C{linha_alvo}', 'values': [[novo_venc.strftime("%d/%m/%Y")]]},
+                                    {'range': f'D{linha_alvo}', 'values': [[novo_v_base]]},
+                                    {'range': f'E{linha_alvo}', 'values': [[novo_v_pago]]},
+                                    {'range': f'F{linha_alvo}', 'values': [[novo_prejuizo]]},
+                                    {'range': f'G{linha_alvo}', 'values': [[novo_atraso]]},
+                                    {'range': f'I{linha_alvo}', 'values': [[novo_pag.strftime("%d/%m/%Y")]]},
+                                ]
+                                aba_cont_edit.batch_update(atualizacoes, value_input_option='USER_ENTERED')
+
+                                # Opcional: Registra na Auditoria
+                                try:
+                                    planilha_mestre.worksheet("LOG_AUDITORIA").append_row([
+                                        dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M"),
+                                        st.session_state.get('usuario_logado', 'Sistema'), "EDIÇÃO CONTÁBIL", f"Linha {linha_alvo}",
+                                        "Receita Federal", f"Ajustou guia {dados_atuais.get('COMPETENCIA', '')} para R$ {novo_v_pago:.2f}"
+                                    ], value_input_option='USER_ENTERED')
+                                except: pass
+
+                                st.session_state['recibo_cont'] = {"acao": "editado"}
+                                st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar: {e}")
+
+                    if excluir:
+                        if confirma_exclusao:
+                            with st.spinner("Iniciando protocolo de destruição sincronizada..."):
+                                try:
+                                    link_alvo = str(dados_atuais.get('LINK_COMPROVANTE', ''))
+                                    
+                                    # 1️⃣ O CAÇADOR: Procura o arquivo no Cofre Central (DOCUMENTOS) usando o link
+                                    id_cloud_excluir = None
+                                    linha_docs_excluir = None
+                                    if not df_docs.empty and link_alvo != "":
+                                        match_doc = df_docs[df_docs['LINK_DRIVE'] == link_alvo]
+                                        if not match_doc.empty:
+                                            id_cloud_excluir = match_doc.iloc[0]['ID_ARQUIVO']
+                                            linha_docs_excluir = match_doc.index[0] + 2
+                                    
+                                    # 2️⃣ O EXECUTOR: Deleta fisicamente o arquivo do servidor Cloudinary
+                                    if id_cloud_excluir and id_cloud_excluir != "-":
+                                        import cloudinary.uploader
+                                        try: 
+                                            cloudinary.uploader.destroy(id_cloud_excluir)
+                                        except Exception as c_err: 
+                                            print(f"Aviso Cloudinary: {c_err}")
+
+                                    # 3️⃣ O LIXEIRO: Deleta a linha da aba DOCUMENTOS (O Cofre)
+                                    if linha_docs_excluir:
+                                        try: planilha_mestre.worksheet("DOCUMENTOS").delete_rows(linha_docs_excluir)
+                                        except: pass
+
+                                    # 4️⃣ O FINALIZADOR: Deleta da aba CONTABILIDADE
+                                    planilha_mestre.worksheet("CONTABILIDADE").delete_rows(linha_alvo)
+
+                                    # Registra o crime na Auditoria
+                                    try:
+                                        planilha_mestre.worksheet("LOG_AUDITORIA").append_row([
+                                            dt.datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y %H:%M"),
+                                            st.session_state.get('usuario_logado', 'Sistema'), "EXCLUSÃO CONTÁBIL", f"Linha {linha_alvo}",
+                                            "Receita Federal", f"Apagou guia {dados_atuais.get('COMPETENCIA', '')}"
+                                        ], value_input_option='USER_ENTERED')
+                                    except: pass
+
+                                    st.session_state['recibo_cont'] = {"acao": "excluido"}
+                                    st.cache_data.clear(); st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro na exclusão: {e}")
+                        else:
+                            st.warning("⚠️ Você precisa marcar a caixa de confirmação para destruir o arquivo.")
+        else:
+            st.info("Nenhum lançamento contábil registrado ainda.")
+
+    # ==========================================
+    # 🤖 ASSISTENTE FISCAL MEI (CHATBOT GOV.BR)
+    # ==========================================
+    st.divider()
+    
+    if 'resposta_mei_ia' not in st.session_state:
+        st.session_state['resposta_mei_ia'] = ""
+
+    with st.expander("🤖 Assistente Fiscal do MEI (Tire suas dúvidas legais)", expanded=False):
+        st.markdown("Tem dúvidas sobre licença-maternidade, limite de compras, INSS, juros de atraso ou contratação de funcionário? **Pergunte ao nosso especialista treinado com as regras do portal Gov.br.**")
+        
+        pergunta_mei = st.text_area("O que você precisa saber sobre o MEI?", placeholder="Ex: Qual o juros se eu atrasar a guia DAS? Posso ter filial?")
+        
+        if st.button("Consultar Legislação 🔎"):
+            if pergunta_mei:
+                with st.spinner("Consultando base de dados do Simples Nacional..."):
+                    try:
+                        import google.generativeai as genai
+                        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+                        
+                        prompt_fiscal = f"""
+                        Você é um Consultor Fiscal Sênior especialista em MEI (Microempreendedor Individual) no Brasil, treinado com os dados oficiais do portal Gov.br (PGMEI) e Sebrae.
+                        A usuária Bia, dona da loja de enxovais Sweet Home, está te fazendo a seguinte pergunta:
+                        
+                        "{pergunta_mei}"
+                        
+                        REGRAS PARA A RESPOSTA:
+                        1. Seja direto, didático e empático. Evite juridiquês complicado.
+                        2. Baseie sua resposta APENAS na lei vigente do MEI no Brasil.
+                        3. Se perguntarem sobre multas de atraso do DAS, informe EXATAMENTE a regra: Multa de 0,33% ao dia (limitada a 20%) + Juros da taxa Selic + 1% no mês do pagamento.
+                        4. Se perguntarem sobre compras, o limite é de 80% da receita bruta.
+                        5. Formate a resposta usando Markdown (negritos e tópicos) para fácil leitura.
+                        """
+                        
+                        modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+                        for m in modelos:
+                            try:
+                                modelo = genai.GenerativeModel(m)
+                                resposta = modelo.generate_content(prompt_fiscal)
+                                if resposta:
+                                    st.session_state['resposta_mei_ia'] = resposta.text
+                                    break
+                            except: continue
+                    except Exception as e:
+                        st.error(f"Erro na IA: {e}")
+            else:
+                st.warning("Digite uma pergunta antes de consultar.")
+                
+        if st.session_state['resposta_mei_ia']:
+            st.info("💡 **Resposta Oficial do Assistente:**")
+            st.markdown(st.session_state['resposta_mei_ia'])
+            if st.button("Limpar Resposta"):
+                st.session_state['resposta_mei_ia'] = ""
+                st.rerun()
+    
