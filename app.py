@@ -330,7 +330,7 @@ with st.sidebar:
     
     menu_selecionado = st.radio(
         "Navegação",
-        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos", "🏭 Compras e Despesas", "📢 Gestão de Marketing"], 
+        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos", "🏭 Compras e Despesas", "📢 Gestão de Marketing", "🏛️ Contabilidade e MEI"], 
         key="navegacao_principal_sweet"
     )
     
@@ -3779,6 +3779,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
         else:
             st.info("Nenhuma demanda de marketing registrada no momento.")
         
+
 
 
 
