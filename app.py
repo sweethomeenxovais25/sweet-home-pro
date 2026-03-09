@@ -1,3 +1,8 @@
+
+
+
+
+
 import streamlit as st
 import pandas as pd
 import gspread
@@ -14,6 +19,11 @@ from PIL import Image
 import requests
 import time
 import pytz
+import hashlib
+import google.generativeai as genai
+transport="rest"
+
+# [As suas importações de bibliotecas continuam aqui em cima intactas...]
 
 def verificar_status_odoo(codigo_produto):
     cod_limpo = str(codigo_produto).strip()
@@ -22,11 +32,8 @@ def verificar_status_odoo(codigo_produto):
         headers = {'User-Agent': 'Mozilla/5.0'}
         resposta = requests.get(url_busca, headers=headers, timeout=10)
         conteudo = resposta.text.lower()
-        
-        # Validação rigorosa: se o código pesquisado não retorna produto
         if f'nenhum resultado para "{cod_limpo.lower()}"' in conteudo or "nenhum resultado encontrado" in conteudo:
             return False, ""
-        
         if "oe_product" in conteudo or "o_wsale_products_item" in conteudo:
             return True, url_busca
         return False, ""
@@ -34,23 +41,46 @@ def verificar_status_odoo(codigo_produto):
         return False, ""
 
 # ==========================================
+# 🧠 0. CONFIGURAÇÕES INICIAIS E I.A.
+# ==========================================
+
+# 1. LIGANDO O MOTOR DA INTELIGÊNCIA ARTIFICIAL (GEMINI)
+try:
+    import google.generativeai as genai
+    import os
+    # Força o uso da API REST para evitar travamentos (looping infinito) no Streamlit Cloud
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"], transport="rest")
+except Exception as e:
+    print(f"Aviso de IA: {e}")
+    pass
+
+# 2. MOTOR WHITE-LABEL (IDENTIDADE DINÂMICA E BANCO DE DADOS)
+try:
+    NOME_LOJA = st.secrets["cliente"]["nome_loja"]
+    LOGO_URL = st.secrets["cliente"]["logo_url"]
+    ID_PLANILHA = st.secrets["cliente"]["spreadsheet_id"]
+    
+    COR_PRIMARIA = st.secrets["tema"]["cor_primaria"]
+    COR_SECUNDARIA = st.secrets["tema"]["cor_secundaria"]
+    COR_TEXTO = st.secrets["tema"]["cor_texto"]
+except Exception as e:
+    st.error("⚠️ Falha ao ler as configurações do Cliente nos Secrets. Verifique o arquivo st.secrets.")
+    st.stop()
+
+# ==========================================
 # 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="Sweet Home", 
-    page_icon="logo_sweet.png", 
+    page_title=f"Gestão | {NOME_LOJA}", 
+    page_icon=LOGO_URL, 
     layout="wide"
 )
 
 # Inicialização das Memórias de Sessão
-if 'autenticado' not in st.session_state:
-    st.session_state['autenticado'] = False
-if 'historico_sessao' not in st.session_state:
-    st.session_state['historico_sessao'] = []
-if 'historico_estoque' not in st.session_state:
-    st.session_state['historico_estoque'] = []
-if 'carrinho' not in st.session_state:
-    st.session_state['carrinho'] = []    
+if 'autenticado' not in st.session_state: st.session_state['autenticado'] = False
+if 'historico_sessao' not in st.session_state: st.session_state['historico_sessao'] = []
+if 'historico_estoque' not in st.session_state: st.session_state['historico_estoque'] = []
+if 'carrinho' not in st.session_state: st.session_state['carrinho'] = []    
     
 # --- AUXILIARES TÉCNICOS ---
 def limpar_v(v):
@@ -59,189 +89,260 @@ def limpar_v(v):
     return round(numero, 2)
 
 def limpar_texto(texto):
-    if not isinstance(texto, str):
-        return ""
+    if not isinstance(texto, str): return ""
     texto_sem_acento = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
     return texto_sem_acento.lower().strip()
 
-# ==========================================
-# 🎨 1.5. IDENTIDADE VISUAL (SWEET CLEAN)
-# ==========================================
-estilo_sweet_clean = """
-<style>
-    /* 1. Tela Principal Branca com a Listra Café na Extrema Direita */
-    [data-testid="stAppViewContainer"] {
-        background-color: #ffffff !important;
-        border-right: 12px solid #31241b !important;
-    }
-    
-    /* 2. Barra Lateral (Tom Areia Muito Claro) */
-    [data-testid="stSidebar"] {
-        background-color: #FCF8F2 !important;
-        border-right: 1px solid #f6debc !important;
-    }
+def buscar_cep_magico(cep):
+    """Vai à internet buscar os dados do endereço usando a API pública e gratuita do ViaCEP"""
+    cep_limpo = str(cep).replace("-", "").replace(".", "").strip()
+    if len(cep_limpo) == 8:
+        try:
+            url = f"https://viacep.com.br/ws/{cep_limpo}/json/"
+            resposta = requests.get(url, timeout=5)
+            dados = resposta.json()
+            if "erro" not in dados:
+                return dados
+        except:
+            return None
+    return None
 
-    /* ✨ O EXORCISMO DA SETA FANTASMA ✨ */
+def buscar_cnpj_magico(cnpj):
+    """Consulta a API pública da ReceitaWS para buscar os dados de uma empresa pelo CNPJ"""
+    cnpj_limpo = str(cnpj).replace(".", "").replace("-", "").replace("/", "").strip()
+    if len(cnpj_limpo) == 14:
+        try:
+            url = f"https://receitaws.com.br/v1/cnpj/{cnpj_limpo}"
+            resposta = requests.get(url, timeout=5)
+            dados = resposta.json()
+            if dados.get("status") == "OK":
+                return dados
+        except:
+            return None
+    return None
+
+def gerar_hash_senha(senha):
+    """Transforma a senha em um código criptografado irreversível (SHA-256)"""
+    return hashlib.sha256(str(senha).encode('utf-8')).hexdigest()
+
+# ==========================================
+# 🎨 1.5. IDENTIDADE VISUAL DINÂMICA (O CAMALEÃO)
+# ==========================================
+# Note que os códigos hexadecimais sumiram! Agora o CSS usa as variáveis (ex: {COR_PRIMARIA})
+estilo_dinamico = f"""
+<style>
+    /* Tela Principal Branca com a Listra na cor Primária do Cliente */
+    [data-testid="stAppViewContainer"] {{
+        background-color: #ffffff !important;
+        border-right: 12px solid {COR_PRIMARIA} !important;
+    }}
+    
+    /* Barra Lateral na cor Secundária do Cliente */
+    [data-testid="stSidebar"] {{
+        background-color: {COR_SECUNDARIA} !important;
+        border-right: 1px solid #e0e0e0 !important;
+    }}
+
+    /* A cor dos textos acompanha a configuração */
     [data-testid="collapsedControl"] svg, 
     [data-testid="collapsedControl"] path,
     [data-testid="stSidebar"] button svg,
-    [data-testid="stSidebar"] button path {
-        color: #31241b !important;
-        fill: #31241b !important;
-        stroke: #31241b !important;
-    }
+    [data-testid="stSidebar"] button path {{
+        color: {COR_TEXTO} !important;
+        fill: {COR_TEXTO} !important;
+        stroke: {COR_TEXTO} !important;
+    }}
 
-    .stMarkdown, p, span, label, div[data-testid="stMetricValue"] {
-        color: #31241b !important;
-    }
+    .stMarkdown, p, span, label, div[data-testid="stMetricValue"] {{ color: {COR_TEXTO} !important; }}
+    h1, h2, h3, h4 {{ color: {COR_TEXTO} !important; }}
 
-    h1, h2, h3, h4 {
-        color: #31241b !important;
-    }
-
-    /* 4. BOTÕES PRIMÁRIOS (Ações Fortes de Salvar/Enviar - Tom Caramelo) */
-    button[kind="primary"] {
-        background-color: #A67B5B !important; 
+    /* BOTÕES PRIMÁRIOS (Ações Fortes) */
+    button[kind="primary"] {{
+        background-color: {COR_PRIMARIA} !important; 
         color: #ffffff !important;
         font-weight: bold !important;
         border-radius: 6px !important;
         border: none !important;
         box-shadow: 2px 2px 8px rgba(0,0,0,0.1) !important;
         transition: all 0.2s ease-in-out !important;
-    }
-    
-    button[kind="primary"]:hover {
-        background-color: #8B5A2B !important;
-        transform: scale(1.02);
-    }
-    
-    button[kind="primary"] p, button[kind="primary"] span {
-        color: #ffffff !important;
-    }
-
-    /* 5. BOTÕES SECUNDÁRIOS (Abas de Navegação e Cancelamentos - Tom Bege da Logo) */
-    button[kind="secondary"] {
-        background-color: #F5E6CE !important; /* Bege Claro Quente */
-        color: #31241b !important; /* Letra na cor Café */
-        font-weight: bold !important;
-        border-radius: 6px !important;
-        border: 1px solid #EAE0D3 !important;
-        box-shadow: none !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    
-    button[kind="secondary"]:hover {
-        background-color: #E6D2B5 !important;
-        transform: scale(1.02);
-    }
-    
-    button[kind="secondary"] p, button[kind="secondary"] span {
-        color: #31241b !important;
-    }
+    }}
+    button[kind="primary"]:hover {{ transform: scale(1.02); opacity: 0.9; }}
+    button[kind="primary"] p, button[kind="primary"] span {{ color: #ffffff !important; }}
 
     /* Limpeza do cabeçalho e rodapé */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {background-color: transparent !important;}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{background-color: transparent !important;}}
 </style>
 """
-st.markdown(estilo_sweet_clean, unsafe_allow_html=True)
+st.markdown(estilo_dinamico, unsafe_allow_html=True)
 
 # ==========================================
-# 🔒 2. FASE DE LOGIN & SEGURANÇA
+# 🚀 2. LIGAÇÃO AO BANCO DE DADOS (CÉREBRO)
 # ==========================================
-if not st.session_state['autenticado']:
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        try:
-            st.image("logo_sweet.png", use_container_width=True)
-        except:
-            st.warning("🌸 Sweet Home Enxovais")
-        
-        st.markdown("<h2 style='text-align: center;'>Gestão Sweet</h2>", unsafe_allow_html=True)
-
-        with st.form("form_login"):
-            usuario_input = st.text_input("Usuário").strip()
-            senha_input = st.text_input("Senha", type="password").strip()
-            entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
-            
-            if entrar:
-                try:
-                    usuarios_permitidos = st.secrets["usuarios"]
-                    if usuario_input in usuarios_permitidos:
-                        if str(usuarios_permitidos[usuario_input]) == senha_input:
-                            st.session_state['autenticado'] = True
-                            st.session_state['usuario_logado'] = usuario_input
-                            
-                            # 💡 LINHA ESSENCIAL ADICIONADA: Ativa o registro na Fase 3
-                            st.session_state['precisa_registrar_acesso'] = True
-                            
-                            st.rerun()
-                        else:
-                            st.error("❌ Senha incorreta.")
-                    else:
-                        st.error("❌ Usuário não encontrado.")
-                except Exception as e:
-                    st.error("Erro ao acessar cofre de senhas. Verifique os Secrets.")
-    st.stop()
-
-# ==========================================
-# 🚀 3. SISTEMA LIBERADO (CONEXÕES E DADOS)
-# ==========================================
-
-# ID da Planilha Cobaia
-ID_PLANILHA = "1E2NwI5WBE1iCjTWxpUxy3TYpiwKU6e4s4-C1Rp1AJX8"
 ESPECIFICACOES = [
     "https://spreadsheets.google.com/feeds", 
     'https://www.googleapis.com/auth/spreadsheets',
     "https://www.googleapis.com/auth/drive.file"
 ]
 
-# 👇 1. PRIMEIRO: O SISTEMA SE CONECTA AO GOOGLE E ABRE A PLANILHA (AGORA COM ESCUDO!)
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def conectar_google():
     try:
+        from oauth2client.service_account import ServiceAccountCredentials
+        import gspread
         if "gcp_service_account" in st.secrets:
             creds_info = st.secrets["gcp_service_account"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
-            return gspread.authorize(creds).open_by_key(ID_PLANILHA)
+            return gspread.authorize(creds).open_by_key(st.secrets["cliente"]["spreadsheet_id"])
         return None
     except Exception as e:
-        st.error(f"Erro de conexão: {e}")
+        st.error(f"Erro de ligação com a base de dados do cliente: {e}")
         st.stop()
 
 planilha_mestre = conectar_google()
 
-# 👇 2. DEPOIS: O GATILHO RODA (Agora que a planilha_mestre já existe!)
+# ==========================================
+# 🧠 2.5. MOTOR WHITE-LABEL (LEITURA DINÂMICA)
+# ==========================================
+try:
+    aba_config = planilha_mestre.worksheet("CONFIGURACOES")
+    dados_config = aba_config.get_all_values()
+    dicionario_config = {linha[0]: linha[1] for linha in dados_config if len(linha) > 1}
+    
+    NOME_LOJA = dicionario_config.get("NOME_LOJA", "Loja Universal")
+    LOGO_URL = dicionario_config.get("LOGO_URL", "https://cdn-icons-png.flaticon.com/512/3081/3081840.png")
+    
+    # AGORA AS CORES VÊM DO BANCO DE DADOS (E não mais do st.secrets!)
+    COR_PRIMARIA = dicionario_config.get("COR_PRIMARIA", "#0056b3")
+    COR_SECUNDARIA = dicionario_config.get("COR_SECUNDARIA", "#f0f8ff")
+    COR_TEXTO = dicionario_config.get("COR_TEXTO", "#1e1e1e")
+except Exception as e:
+    # Cores de segurança caso a planilha falhe
+    NOME_LOJA = "Loja Universal"
+    LOGO_URL = ""
+    COR_PRIMARIA = "#0056b3"
+    COR_SECUNDARIA = "#f0f8ff"
+    COR_TEXTO = "#1e1e1e"
+
+# ==========================================
+# 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
+# ==========================================
+st.set_page_config(page_title=f"Gestão | {NOME_LOJA}", page_icon=LOGO_URL, layout="wide")
+
+if 'autenticado' not in st.session_state: st.session_state['autenticado'] = False
+if 'historico_sessao' not in st.session_state: st.session_state['historico_sessao'] = []
+if 'historico_estoque' not in st.session_state: st.session_state['historico_estoque'] = []
+if 'carrinho' not in st.session_state: st.session_state['carrinho'] = []    
+
+def limpar_v(v):
+    if pd.isna(v) or v == "": return 0.0
+    numero = pd.to_numeric(str(v).replace('R$', '').replace('.', '').replace(',', '.').strip(), errors='coerce') or 0.0
+    return round(numero, 2)
+
+def limpar_texto(texto):
+    if not isinstance(texto, str): return ""
+    import unicodedata
+    texto_sem_acento = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
+    return texto_sem_acento.lower().strip()
+
+estilo_dinamico = f"""
+<style>
+    [data-testid="stAppViewContainer"] {{ background-color: #ffffff !important; border-right: 12px solid {COR_PRIMARIA} !important; }}
+    [data-testid="stSidebar"] {{ background-color: {COR_SECUNDARIA} !important; border-right: 1px solid #e0e0e0 !important; }}
+    [data-testid="collapsedControl"] svg, [data-testid="collapsedControl"] path, [data-testid="stSidebar"] button svg, [data-testid="stSidebar"] button path {{ color: {COR_TEXTO} !important; fill: {COR_TEXTO} !important; stroke: {COR_TEXTO} !important; }}
+    .stMarkdown, p, span, label, div[data-testid="stMetricValue"] {{ color: {COR_TEXTO} !important; }}
+    h1, h2, h3, h4 {{ color: {COR_TEXTO} !important; }}
+    button[kind="primary"] {{ background-color: {COR_PRIMARIA} !important; color: #ffffff !important; font-weight: bold !important; border-radius: 6px !important; border: none !important; box-shadow: 2px 2px 8px rgba(0,0,0,0.1) !important; transition: all 0.2s ease-in-out !important; }}
+    button[kind="primary"]:hover {{ transform: scale(1.02); opacity: 0.9; }}
+    button[kind="primary"] p, button[kind="primary"] span {{ color: #ffffff !important; }}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{background-color: transparent !important;}}
+</style>
+"""
+st.markdown(estilo_dinamico, unsafe_allow_html=True)
+
+# ==========================================
+# 🔒 3. FASE DE LOGIN (AUTENTICAÇÃO INTELIGENTE)
+# ==========================================
+if not st.session_state['autenticado']:
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        try: st.image(LOGO_URL, use_container_width=True)
+        except: st.warning(f"🏢 {NOME_LOJA}")
+        
+        st.markdown(f"<h2 style='text-align: center;'>Gestão | {NOME_LOJA}</h2>", unsafe_allow_html=True)
+
+        with st.form("form_login"):
+            usuario_input = st.text_input("Utilizador").strip()
+            senha_input = st.text_input("Palavra-passe", type="password").strip()
+            entrar = st.form_submit_button("Entrar no Sistema 🚀", use_container_width=True)
+            
+            if entrar:
+                if usuario_input and senha_input:
+                    with st.spinner("A verificar credenciais..."):
+                        try:
+                            aba_cred = planilha_mestre.worksheet("CREDENCIAIS")
+                            dados_cred = aba_cred.get_all_values()
+                            
+                            if len(dados_cred) > 1:
+                                import pandas as pd
+                                df_cred = pd.DataFrame(dados_cred[1:], columns=dados_cred[0])
+                                
+                                # Procura o utilizador que esteja com o status "Ativo"
+                                user_row = df_cred[(df_cred['USUARIO'] == usuario_input) & (df_cred['STATUS'] == 'Ativo')]
+                                
+                                # PROCURA O USUÁRIO E VERIFICA A SENHA CRIPTOGRAFADA
+                                if not user_row.empty:
+                                    senha_real_banco = str(user_row.iloc[0]['SENHA'])
+                                    senha_digitada_hash = gerar_hash_senha(senha_input)
+                                    
+                                    # O sistema aceita o Hash novo OU a senha antiga (para não te trancar fora agora)
+                                    if senha_real_banco == senha_digitada_hash or senha_real_banco == senha_input:
+                                        st.session_state['autenticado'] = True
+                                        st.session_state['usuario_logado'] = str(user_row.iloc[0]['NOME'])
+                                        st.session_state['nivel_acesso'] = str(user_row.iloc[0]['NIVEL'])
+                                        st.session_state['precisa_registrar_acesso'] = True
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Palavra-passe incorreta.")
+                                else:
+                                    st.error("❌ Utilizador não encontrado ou conta bloqueada.")
+                            else:
+                                st.error("⚠️ O Cofre de Credenciais está vazio no sistema.")
+                        except Exception as e:
+                            st.error(f"Erro ao comunicar com o servidor de segurança: {e}")
+                else:
+                    st.warning("Preencha o utilizador e a palavra-passe.")
+    st.stop()
+
 # ====================================================
-# 🤖 GATILHO DE REGISTRO (VERSÃO COM HORÁRIO DE RECIFE)
+# 🤖 GATILHO DE REGISTO DE ACESSO
 # ====================================================
 if st.session_state.get('precisa_registrar_acesso'):
     try:
         aba_usuario = planilha_mestre.worksheet("USUARIO") 
-        
-        # --- CONFIGURAÇÃO DE FUSO HORÁRIO (RECIFE/BRASÍLIA) ---
+        import pytz
+        from datetime import datetime
         fuso_br = pytz.timezone('America/Sao_Paulo') 
         agora = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
         
-        usuario_logado = st.session_state.get('usuario_logado')
-        celula_nome = aba_usuario.find(usuario_logado)
+        usuario_log = st.session_state.get('usuario_logado')
+        celula_nome = aba_usuario.find(usuario_log)
         
         if celula_nome:
             cabecalhos = aba_usuario.row_values(1)
             if "ULTIMO_ACESSO" in cabecalhos:
                 col_acesso = cabecalhos.index("ULTIMO_ACESSO") + 1
                 aba_usuario.update_cell(celula_nome.row, col_acesso, agora)
-                st.toast(f"Logado como {usuario_logado}. Ponto registrado! 🕒", icon="✅")
+                st.toast(f"Bem-vindo, {usuario_log}. Ponto registado! 🕒", icon="✅")
             
-            # Desliga o sinalizador para não repetir o registro no próximo clique
             st.session_state['precisa_registrar_acesso'] = False 
-            
     except Exception as e:
-        # Erro discreto no log do servidor
-        print(f"Erro ao registrar: {e}") 
+        print(f"Erro ao registar acesso: {e}") 
         st.session_state['precisa_registrar_acesso'] = False
-        
+
 # ☁️ Função de Upload Rápido para Cloudinary (Nova Engine de Arquivos)
 def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
     try:
@@ -270,13 +371,12 @@ def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
 
 @st.cache_data(ttl=60)
 def carregar_dados():
-    # 💡 CORREÇÃO 1: Se falhar, agora ele retorna as 14 variáveis certinhas para não quebrar o app
+    # 💡 CORREÇÃO 1: Agora ele retorna 15 variáveis certinhas (adicionado mais um pd.DataFrame vazio para df_cred)
     if not planilha_mestre: 
-        return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return {}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
     def ler_aba_seguro(nome):
         try:
-            # 💡 CORREÇÃO 2: A variável certa é 'nome' e não 'nome_aba'
             aba = planilha_mestre.worksheet(nome)
             dados = aba.get_all_values()
             if len(dados) <= 1: return pd.DataFrame()
@@ -302,69 +402,121 @@ def carregar_dados():
     df_despesas = ler_aba_seguro("DESPESAS")
     df_docs = ler_aba_seguro("DOCUMENTOS")
     df_marketing = ler_aba_seguro("MARKETING")
+    
+    # 💡 ABA ADICIONADA PARA O VENDEDOR DINÂMICO
+    df_cred = ler_aba_seguro("CREDENCIAIS")
 
     banco_prod = {str(r.iloc[0]): {"nome": r.iloc[1], "custo": float(limpar_v(r.iloc[3])), "estoque": r.iloc[7], "venda": r.iloc[8]} for _, r in df_inv.iterrows()} if not df_inv.empty else {}
     banco_cli = {str(r.iloc[0]): {"nome": str(r.iloc[1]), "fone": str(r.iloc[2])} for _, r in df_cli.iterrows()} if not df_cli.empty else {}
     banco_forn = {str(r.iloc[0]): {"nome": str(r.iloc[1])} for _, r in df_fornecedores.iterrows()} if not df_fornecedores.empty else {}
 
-    # Retornando TUDO
-    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas, df_marketing
+    # Retornando TUDO (15 itens agora)
+    return banco_prod, banco_cli, df_inv, df_fin, df_vendas, df_painel, df_cli, df_socios, df_aportes, df_docs, banco_forn, df_fornecedores, df_despesas, df_marketing, df_cred
 
-# Variáveis que recebem os dados (Atualizado)
-banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes, df_docs, banco_de_fornecedores, df_fornecedores, df_despesas, df_marketing = carregar_dados()
+banco_de_produtos, banco_de_clientes, df_full_inv, df_financeiro, df_vendas_hist, df_painel_resumo, df_clientes_full, df_socios, df_aportes, df_docs, banco_de_fornecedores, df_fornecedores, df_despesas, df_marketing, df_cred = carregar_dados()
 
 with st.sidebar:
-    try:
-        st.image("logo_sweet.png", use_container_width=True)
-    except:
-        st.write("🌸 **Sweet Home**")
+    try: st.image(LOGO_URL, use_container_width=True)
+    except: st.write(f"🏢 **{NOME_LOJA}**")
     
     st.write(f"👋 Olá, **{st.session_state.get('usuario_logado', 'Usuária')}**!")
+    
+    # 🔐 COMPLIANCE: O próprio usuário altera a sua senha secreta
+    with st.expander("👤 Meu Perfil / Segurança", expanded=False):
+        with st.form("form_trocar_senha"):
+            st.write("Altere a sua palavra-passe de acesso.")
+            nova_senha_user = st.text_input("Nova Palavra-passe", type="password")
+            
+            if st.form_submit_button("Atualizar 🔒", type="primary"):
+                if nova_senha_user:
+                    try:
+                        aba_cred_senha = planilha_mestre.worksheet("CREDENCIAIS")
+                        # Procura a linha do usuário logado na Coluna A (1)
+                        celula_eu = aba_cred_senha.find(st.session_state.get('usuario_logado'), in_column=1)
+                        # Atualiza a senha na Coluna C (3)
+                        aba_cred_senha.update_cell(celula_eu.row, 3, gerar_hash_senha(nova_senha_user.strip()))
+                        st.success("Senha alterada com sucesso!")
+                    except Exception as e:
+                        st.error("Erro ao atualizar a senha no cofre.")
+                else:
+                    st.warning("Digite a nova senha.")
+                    
     st.divider()
     
     if st.button("Sair do Sistema 🚪", use_container_width=True):
         st.session_state['autenticado'] = False
         st.rerun()
 
-    st.title("🛠️ Painel Sweet Home")
+    st.title("🛠️ Painel de Operações")
     
-    menu_selecionado = st.radio(
-        "Navegação",
-        ["🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", "📂 Documentos", "🏭 Compras e Despesas", "📢 Gestão de Marketing", "🏛️ Contabilidade e MEI"], 
-        key="navegacao_principal_sweet"
-    )
+    # 💡 O ESCUDO DE ACESSO COMPLETO (RBAC EM 3 CAMADAS)
+    nivel_atual = st.session_state.get('nivel_acesso', 'Operacional')
+
+    if nivel_atual == 'Admin' or nivel_atual == 'Admin (Acesso Total)':
+        # CAMADA 1: O Dono da loja vê TUDO
+        opcoes_menu = [
+            "🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", 
+            "📂 Documentos", "🏭 Compras e Despesas", "📢 Gestão de Marketing", 
+            "🏛️ Contabilidade e MEI", "⚙️ Painel de Administração"
+        ]
+    elif nivel_atual == 'Gerência (Intermediário)':
+        # CAMADA 2: Gerente (Vê fluxo de caixa e despesas, mas não vê impostos nem painel de TI)
+        opcoes_menu = [
+            "🛒 Vendas", "💰 Financeiro", "📦 Estoque", "👥 Clientes", 
+            "📂 Documentos", "🏭 Compras e Despesas", "📢 Gestão de Marketing"
+        ]
+    else:
+        # CAMADA 3: Operacional (Vendedores, Caixas, Estoquistas)
+        opcoes_menu = [
+            "🛒 Vendas", "📦 Estoque", "👥 Clientes", "📢 Gestão de Marketing"
+        ]
+        
+    menu_selecionado = st.radio("Navegação", opcoes_menu, key="navegacao_principal_sweet")
     
     st.divider()
     modo_teste = st.toggle("🔬 Modo de Teste", value=False, key="toggle_teste")
     
     if st.button("🔄 Sincronizar Planilha", key="btn_sincronizar"):
-        st.cache_resource.clear()
         st.cache_data.clear()
+        st.cache_resource.clear() # Deixe os dois para garantir uma limpeza profunda!
         st.rerun()
 
     st.divider()
-    with st.expander("🛡️ Backup do Sistema"):
-        st.markdown("<small>Faça o download seguro dos seus dados para o computador.</small>", unsafe_allow_html=True)
+    with st.expander("🛡️ Backup do Sistema (SaaS Safe)"):
+        st.markdown("<small>Extração completa da base de dados em formato CSV.</small>", unsafe_allow_html=True)
         try:
-            if not df_vendas_hist.empty:
-                st.download_button("📥 Baixar Vendas", df_vendas_hist.to_csv(index=False).encode('utf-8'), f"Vendas_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-            if not df_full_inv.empty:
-                st.download_button("📥 Baixar Estoque", df_full_inv.to_csv(index=False).encode('utf-8'), f"Estoque_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-            if not df_clientes_full.empty:
-                st.download_button("📥 Baixar Clientes", df_clientes_full.to_csv(index=False).encode('utf-8'), f"Clientes_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-            if not df_financeiro.empty:
-                st.download_button("📥 Baixar Financeiro", df_financeiro.to_csv(index=False).encode('utf-8'), f"Financeiro_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+            abas_backup = {
+                "Vendas": df_vendas_hist,
+                "Inventario": df_full_inv,
+                "Clientes": df_clientes_full,
+                "Financeiro": df_financeiro,
+                "Despesas": df_despesas,
+                "Marketing": df_marketing,
+                "Documentos": df_docs
+            }
+            for nome, df in abas_backup.items():
+                if not df.empty:
+                    st.download_button(
+                        f"📥 Baixar {nome}", 
+                        df.to_csv(index=False).encode('utf-8'), 
+                        f"Backup_{nome}_{datetime.now().strftime('%Y%m%d')}.csv", 
+                        "text/csv", 
+                        use_container_width=True
+                    )
         except Exception as e:
-            st.error("Sincronize a planilha para gerar o backup.")
+            st.error("Sincronize a planilha para habilitar os backups.")
 
-# --- 👤 CONTROLE DE FLUXO (Visualização) ---
-    with st.expander("👤 Controle de Fluxo", expanded=False):
+# --- 👤 CONTROLE DE FLUXO DE ACESSO (Visualização) ---
+    with st.expander("👤 Controle de Fluxo de Acesso", expanded=False):
         st.write("Monitoramento de acesso dos usuários ao sistema.")
 
         try:
             # Carrega a aba USUARIO fresca da planilha
-            aba_usuario = planilha_mestre.worksheet("USUARIO")
-            dados_usuarios = aba_usuario.get_all_values()
+            @st.cache_data(ttl=60)
+            def ler_usuarios_com_cache():
+                return planilha_mestre.worksheet("USUARIO").get_all_values()
+            
+            dados_usuarios = ler_usuarios_com_cache()
 
             if len(dados_usuarios) > 1:
                 # Transforma os dados em uma tabela (DataFrame)
@@ -389,7 +541,20 @@ with st.sidebar:
 
         except Exception as e:
             st.error(f"Erro ao carregar o relatório de acessos: {e}")
-            
+
+# [Restante do código do seu Menu Lateral...]
+    
+    st.divider()
+    # ⚡ ASSINATURA DISCRETA DO SAAS (GestoBap)
+    st.markdown(
+        """
+        <div style='text-align: center; color: #888888; font-size: 11px; padding-bottom: 10px;'>
+            ⚡ Powered by <b>GestoBap</b>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
 # ==========================================
 # --- SEÇÃO 1: VENDAS (SISTEMA DE CARRINHO MULTI-ITENS) ---
 # ==========================================
@@ -421,7 +586,8 @@ if menu_selecionado == "🛒 Vendas":
     # ==========================================
     with st.container(border=True):
         # 1. Título centralizado e DENTRO do quadro para ditar a largura total
-        st.markdown("<h3 style='text-align: center;'>🛒 Registro de Venda</h3>", unsafe_allow_html=True)
+        # 💡 WHITE-LABEL: Agora o título puxa o nome da loja dinamicamente
+        st.markdown(f"<h3 style='text-align: center;'>🛒 Registro de Venda - {NOME_LOJA}</h3>", unsafe_allow_html=True)
         st.divider()
 
         # 2. Mantendo EXATAMENTE a sua estrutura original: um embaixo do outro
@@ -439,7 +605,30 @@ if menu_selecionado == "🛒 Vendas":
             
             c_nome_novo = st.text_input("Nome Completo (se novo)", key="venda_nome_novo")
             c_zap = st.text_input("WhatsApp", value=telefone_sugerido, key=f"zap_venda_input_{c_sel}")
-            vendedor = st.text_input("Vendedor(a)", value="Bia", key="venda_vendedor_input")
+            
+            # ========================================================
+            # 💡 PONTO 6: SELETOR DE VENDEDOR DINÂMICO (ADEUS, "BIA" FIXA!)
+            # ========================================================
+            if not df_cred.empty and 'STATUS' in df_cred.columns and 'NOME' in df_cred.columns:
+                # Puxa apenas os funcionários que estão com status "Ativo"
+                lista_vendedores = df_cred[df_cred['STATUS'] == 'Ativo']['NOME'].tolist()
+            else:
+                # Se a planilha estiver vazia, usa o nome de quem logou
+                lista_vendedores = [st.session_state.get('usuario_logado', 'Vendedor(a)')]
+            
+            # Descobre a posição do usuário logado na lista para deixá-lo como padrão
+            usuario_atual = st.session_state.get('usuario_logado', '')
+            try: 
+                idx_vendedor_padrao = lista_vendedores.index(usuario_atual)
+            except: 
+                idx_vendedor_padrao = 0
+                # Proteção extra: se o usuário logado não estiver na lista por algum motivo, adiciona ele
+                if usuario_atual and usuario_atual not in lista_vendedores:
+                    lista_vendedores.insert(0, usuario_atual)
+
+            # O text_input virou um selectbox inteligente!
+            vendedor = st.selectbox("Vendedor(a) Responsável", lista_vendedores, index=idx_vendedor_padrao, key="venda_vendedor_sel")
+            # ========================================================
 
         with col_v2:
             # 3. O "espaço vazio" à direita é protegido aqui para as parcelas do Sweet Flex
@@ -520,8 +709,6 @@ if menu_selecionado == "🛒 Vendas":
             st.markdown("#### 🛒 Itens Selecionados")
             df_car = pd.DataFrame(st.session_state['carrinho'])
             st.dataframe(df_car[['nome', 'qtd', 'preco', 'subtotal']], use_container_width=True, hide_index=True)
-
-            # (restante do seu código continua igual...)
             
             subtotal_venda = df_car['subtotal'].sum()
             
@@ -588,7 +775,7 @@ if menu_selecionado == "🛒 Vendas":
                             cod_cli = c_sel.split(" - ")[0]
                             nome_cli = banco_de_clientes[cod_cli]['nome']
 
-                        # 2. Gravação de Itens (Loop na Planilha)
+                        # 2. Gravação de Itens (Loop na Planilha - BLINDADO SAAS)
                         if not modo_teste:
                             aba_v = planilha_mestre.worksheet("VENDAS")
                             for item in st.session_state['carrinho']:
@@ -600,8 +787,7 @@ if menu_selecionado == "🛒 Vendas":
                                 t_liq_item = item['subtotal'] - desconto_proporcional
                                 eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
                                 
-                                # Fórmulas Inteligentes
-                                f_atraso = '=SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN())))'
+                                # 🛡️ Fórmulas Inteligentes (Injetadas linha por linha com proteção contra erros visuais)
                                 f_k = '=SE(INDIRETO("I"&LIN())=""; ""; ARRED(INDIRETO("I"&LIN()) * (1 - INDIRETO("J"&LIN())); 2))'
                                 f_l = '=SE(INDIRETO("H"&LIN())=""; ""; ARRED(INDIRETO("H"&LIN()) * INDIRETO("K"&LIN()); 2))'
                                 f_m = '=SE(INDIRETO("L"&LIN())=""; ""; ARRED(INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())); 2))'
@@ -610,6 +796,9 @@ if menu_selecionado == "🛒 Vendas":
                                 
                                 # 💡 SUA FÓRMULA DE SALDO DEVEDOR
                                 f_u = '=SE(INDIRETO("L"&LIN())=""; ""; SE(ARRUMAR(MINÚSCULA(INDIRETO("P"&LIN())))="não"; 0; MÁXIMO(0; INDIRETO("L"&LIN()) - INDIRETO("T"&LIN()))))'
+                                
+                                # 💡 NOVA: Fórmula de Atraso cravada com a regra do vazio
+                                f_atraso = '=SE(INDIRETO("V"&LIN())=""; ""; SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN()))))'
                                 
                                 linha = [
                                     "", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, 
@@ -621,8 +810,14 @@ if menu_selecionado == "🛒 Vendas":
                                     detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", 
                                     "Pendente" if eh_parc=="Sim" else "Pago", f_atraso
                                 ]
-                                idx_ins = aba_v.find("TOTAIS").row
-                                aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
+                                
+                                # 🛡️ Tratamento de erro na inserção (Tática de Fallback)
+                                try:
+                                    idx_ins = aba_v.find("TOTAIS").row
+                                    aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
+                                except:
+                                    # Se a aba não tiver TOTAIS, insere na última linha vazia disponível
+                                    aba_v.append_row(linha, value_input_option='USER_ENTERED')
 
                         # 3. Geração do Recibo Único e Elegante
                         primeiro_nome_vendedor = vendedor.split(' ')[0]
@@ -962,6 +1157,94 @@ if menu_selecionado == "🛒 Vendas":
 # --- SEÇÃO 2: FINANCEIRO (INTELIGÊNCIA 360) ---
 # ==========================================
 elif menu_selecionado == "💰 Financeiro":
+    st.title("💰 Gestão Financeira")
+    
+    # ==========================================================
+    # 🧠 CEO DE BOLSO (INTELIGÊNCIA ARTIFICIAL FINANCEIRA - REVISADO)
+    # ==========================================================
+    if st.session_state.get('nivel_acesso') in ['Admin', 'Admin (Acesso Total)', 'Gerência (Intermediário)']:
+        with st.expander("✨ Relatório Executivo Inteligente (CEO de Bolso)", expanded=True):
+            c_ia1, c_ia2 = st.columns([3, 1])
+            c_ia1.write(f"Olá, **{st.session_state.get('usuario_logado', 'Gestor')}**! Quer que a Inteligência Artificial analise os números da **{NOME_LOJA}**?")
+            
+            if c_ia2.button("🧠 Gerar Análise Executiva", type="primary", use_container_width=True):
+                with st.spinner("O CEO de Bolso está a analisar os seus dados..."):
+                    try:
+                        # 1. PREPARAÇÃO DOS DADOS (CÉREBRO DO SaaS)
+                        total_vendas_qtd = len(df_vendas_hist) if not df_vendas_hist.empty else 0
+                        total_despesas = len(df_despesas) if not df_despesas.empty else 0
+                        
+                        # Localização flexível do produto campeão
+                        produto_top = "Nenhum"
+                        if not df_vendas_hist.empty:
+                            try:
+                                col_prod_nome = 'PRODUTO' if 'PRODUTO' in df_vendas_hist.columns else df_vendas_hist.columns[5]
+                                produto_top = df_vendas_hist[col_prod_nome].value_counts().idxmax()
+                            except:
+                                produto_top = "Identificado no histórico"
+
+                        # 2. ENGENHARIA DE PROMPT (PERSONALIZADA)
+                        prompt_ceo = f"""
+                        Aja como um Diretor Financeiro (CFO) amigável da loja {NOME_LOJA}. 
+                        Analise os seguintes dados reais:
+                        - Total de Vendas registradas: {total_vendas_qtd}
+                        - Registos de Despesas/Saídas: {total_despesas}
+                        - Produto mais vendido: {produto_top}
+                        
+                        Crie um resumo executivo de 2 parágrafos. 
+                        No primeiro, dê um panorama geral motivador. 
+                        No segundo, dê uma sugestão prática para aumentar o lucro.
+                        Use um tom profissional e acolhedor. Seja conciso.
+                        """
+
+                        # 3. MOTOR DE FALLBACK COM LISTA ATUALIZADA
+                        import requests
+                        if "GOOGLE_API_KEY" not in st.secrets:
+                            st.error("⚠️ Chave 'GOOGLE_API_KEY' não encontrada nos Secrets!")
+                            st.stop()
+                        
+                        chave_api = st.secrets["GOOGLE_API_KEY"]
+                        
+                        # 💡 A CORREÇÃO ESTÁ AQUI: "gemini-pro" alterado para "gemini-1.5-pro" (nome técnico V1)
+                        modelos_para_testar = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+                        
+                        sucesso_ia = False
+                        ultimo_erro_tecnico = ""
+
+                        for modelo_nome in modelos_para_testar:
+                            try:
+                                # Usamos o endpoint v1 para maior estabilidade no SaaS
+                                url_google = f"https://generativelanguage.googleapis.com/v1/models/{modelo_nome}:generateContent?key={chave_api}"
+                                payload = {"contents": [{"parts": [{"text": prompt_ceo}]}]}
+                                
+                                resposta = requests.post(url_google, json=payload, timeout=12)
+                                
+                                if resposta.status_code == 200:
+                                    dados_retorno = resposta.json()
+                                    texto_final = dados_retorno['candidates'][0]['content']['parts'][0]['text']
+                                    st.success(f"✅ Análise concluída com sucesso (via {modelo_nome})!")
+                                    st.info(texto_final)
+                                    sucesso_ia = True
+                                    break # Sucesso! Interrompe o loop
+                                else:
+                                    # Guarda o erro para diagnóstico se nenhum funcionar
+                                    ultimo_erro_tecnico = f"Modelo {modelo_nome} retornou Erro {resposta.status_code}: {resposta.text}"
+                                    continue
+                            except Exception as e_req:
+                                ultimo_erro_tecnico = str(e_req)
+                                continue
+
+                        if not sucesso_ia:
+                            st.error("⚠️ O Google recusou a ligação ou a cota expirou.")
+                            with st.expander("🔍 Detalhes Técnicos para Suporte"):
+                                st.code(ultimo_erro_tecnico)
+
+                    except Exception as e_geral:
+                        st.error(f"⚠️ Erro ao processar os dados para a IA: {e_geral}")
+    
+    st.divider()
+    
+    # [O restante do seu código financeiro (gráficos, tabelas de lucro, etc) continua aqui em baixo...]
     st.markdown("### 📈 Resumo Geral Sweet Home")
     if not df_vendas_hist.empty:
         try:
@@ -1913,7 +2196,9 @@ elif menu_selecionado == "💰 Financeiro":
     if sel_ficha != "---":
         id_c = sel_ficha.split(" - ")[0]
         nome_c_ficha = " - ".join(sel_ficha.split(" - ")[1:])
-        v_hist = df_vendas_hist[df_vendas_hist['CÓD. CLIENTE'].astype(str) == id_c]
+        
+        # 💡 BLINDAGEM 1: strip() ignora espaços falsos e copy() protege a memória
+        v_hist = df_vendas_hist[df_vendas_hist['CÓD. CLIENTE'].astype(str).str.strip() == str(id_c).strip()].copy()
         
         # Cria uma coluna numérica temporária para facilitar a soma e o filtro
         v_hist['SALDO_NUM'] = v_hist['SALDO DEVEDOR'].apply(limpar_v)
@@ -1952,10 +2237,13 @@ elif menu_selecionado == "💰 Financeiro":
             
             saldo_formatado = f"R$ {saldo_devedor_real:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
-            # MENSAGEM 1: COBRANÇA (Design Sweet Home)
+            # 💡 BLINDAGEM 2: SAAS WHITE-LABEL (Adeus Bia e Sweet Home)
+            nome_atendente = st.session_state.get('usuario_logado', 'Atendimento').split(' ')[0]
+
+            # MENSAGEM 1: COBRANÇA (Design Dinâmico)
             msg_cobranca = (
                 f"Olá, *{nome_c_ficha}*! Tudo bem? 🌸\n\n"
-                f"Aqui é do *Setor Financeiro da Sweet Home Enxovais*.\n"
+                f"Aqui é {nome_atendente} do *Setor Financeiro da {NOME_LOJA}*.\n"
                 f"Criamos esse departamento recentemente para melhorar a nossa organização e estarmos ainda mais próximos de você! ✨\n\n"
                 f"Passando para deixar o resumo atualizado da sua ficha conosco:\n\n"
                 f"📑 *SEU HISTÓRICO DE COMPRAS:*\n"
@@ -1966,10 +2254,10 @@ elif menu_selecionado == "💰 Financeiro":
                 f"Qualquer dúvida sobre os itens ou se precisar da nossa chave PIX para regularizar, estou à disposição! 🥰"
             )
 
-            # MENSAGEM 2: LEMBRETE PREVENTIVO (Design Sweet Home)
+            # MENSAGEM 2: LEMBRETE PREVENTIVO (Design Dinâmico)
             msg_lembrete = (
                 f"Olá, *{nome_c_ficha}*! Tudo bem? 🌸\n\n"
-                f"Aqui é do *Setor Financeiro da Sweet Home Enxovais*.\n\n"
+                f"Aqui é {nome_atendente} do *Setor Financeiro da {NOME_LOJA}*.\n\n"
                 f"Passando apenas para te enviar um lembrete super amigável de que você tem itens com vencimento se aproximando. ✨\n\n"
                 f"📑 *RESUMO DA SUA FICHA:*\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
@@ -2002,7 +2290,7 @@ elif menu_selecionado == "💰 Financeiro":
                     st.markdown(btn_prev_html, unsafe_allow_html=True)
                 
                 # ---------------------------------------------------------
-                # 4. MÓDULO DE IA SOB DEMANDA
+                # 4. MÓDULO DE IA SOB DEMANDA (API REST BLINDADA)
                 # ---------------------------------------------------------
                 st.markdown("---")
                 st.write("✨ **Precisa de uma abordagem diferente?**")
@@ -2016,11 +2304,8 @@ elif menu_selecionado == "💰 Financeiro":
                     
                     with st.spinner("🤖 Consultando a IA (Modo Seguro)..."):
                         try:
-                            import google.generativeai as genai
-                            genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-                            
                             prompt = f"""
-                            Você atua no Setor Financeiro da 'Sweet Home Enxovais'. 
+                            Você atua no Setor Financeiro da '{NOME_LOJA}'. 
                             Reescreva a mensagem abaixo para deixá-la incrivelmente empática e persuasiva, mas sem perder a educação. 
                             MANTENHA INTACTA a lista de produtos (o histórico com as datas) e o valor final.
                             
@@ -2033,31 +2318,40 @@ elif menu_selecionado == "💰 Financeiro":
                             {msg_base_ia}
                             """
                             
-                            # 💡 AJUSTE DA IA: Removido o modelo velho (pro) e inserido o tradutor de limites (429)
-                            modelos = ["gemini-2.0-flash"]
-                            resultado_ia = None
-                            erro_google = ""
+                            # 🚀 CHAMADA DIRETA E SEGURA (Sem usar a biblioteca que trava)
+                            import requests
+                            if "GOOGLE_API_KEY" not in st.secrets:
+                                st.error("⚠️ Chave 'GOOGLE_API_KEY' não encontrada nos Secrets!")
+                                st.stop()
+                                
+                            chave_api = st.secrets["GOOGLE_API_KEY"]
+                            modelos = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+                            
+                            sucesso_ia = False
+                            texto_final_ia = ""
                             
                             for m in modelos:
                                 try:
-                                    modelo_gen = genai.GenerativeModel(m)
-                                    resultado_ia = modelo_gen.generate_content(prompt)
-                                    if resultado_ia:
-                                        break
-                                except Exception as e:
-                                    erro_str = str(e)
-                                    if "429" in erro_str or "quota" in erro_str.lower():
-                                        erro_google = "⏳ Limite de consultas rápidas atingido. Por favor, aguarde 30 segundos e clique novamente."
-                                    else:
-                                        erro_google = erro_str
-                                    continue
-                                
-                            if resultado_ia:
+                                    url_google = f"https://generativelanguage.googleapis.com/v1/models/{m}:generateContent?key={chave_api}"
+                                    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                                    
+                                    resposta = requests.post(url_google, json=payload, timeout=15)
+                                    
+                                    if resposta.status_code == 200:
+                                        dados_retorno = resposta.json()
+                                        texto_final_ia = dados_retorno['candidates'][0]['content']['parts'][0]['text']
+                                        sucesso_ia = True
+                                        break # Funcionou, sai do loop
+                                except:
+                                    continue # Deu erro de internet, tenta o próximo modelo
+                                    
+                            # 🚀 RESULTADO FINAL DA IA
+                            if sucesso_ia:
                                 st.success("✨ Mensagem Otimizada com Sucesso!")
-                                texto_final_ia = st.text_area("Revise a mensagem da IA:", value=resultado_ia.text.strip(), height=250)
+                                texto_editado = st.text_area("Revise a mensagem da IA:", value=texto_final_ia.strip(), height=250)
                                 
-                                # Botão Nativo (st.link_button) para garantir que os Emojis gerados pela IA não quebrem
-                                url_ia = f"https://wa.me/{tel_c}?text={urllib.parse.quote(texto_final_ia)}"
+                                # Botão Nativo (st.link_button)
+                                url_ia = f"https://wa.me/{tel_c}?text={urllib.parse.quote(texto_editado)}"
                                 st.link_button("📲 Enviar Mensagem da IA", url_ia, use_container_width=True, type="primary")
                                 
                                 st.write("") # Espaçinho visual
@@ -2065,7 +2359,7 @@ elif menu_selecionado == "💰 Financeiro":
                                     st.session_state['ia_ficha_ativa'] = False
                                     st.rerun()
                             else:
-                                st.error(f"⚠️ {erro_google}" if erro_google else "⚠️ Nenhum modelo de IA suportou a requisição no momento.")
+                                st.error("⚠️ O Google está sobrecarregado ou a cota expirou. Tente novamente em instantes.")
                         except Exception as e_ia:
                             st.error(f"⚠️ Erro de comunicação com o Google: {e_ia}")
 
@@ -2246,19 +2540,42 @@ elif menu_selecionado == "📦 Estoque":
                             cu_l = c2.number_input("Novo Custo", value=float(custo_at))
                             pr_l = c3.number_input("Novo Preço", value=float(preco_at))
                             puxar = st.checkbox(f"Puxar {est_h} itens antigos?", value=True)
+                            
                             if st.form_submit_button("Gerar Lote"):
                                 with st.spinner("Criando lote..."):
                                     aba = planilha_mestre.worksheet("INVENTÁRIO")
+                                    
+                                    # 🛡️ Fórmulas Blindadas do Estoque
                                     f_total_e = '=SE(INDIRETO("C"&LIN())=""; ""; ARRED(INDIRETO("C"&LIN()) * INDIRETO("D"&LIN()); 2))'
+                                    
+                                    # 💡 A NOVA FÓRMULA: O SOMASE que busca na aba VENDAS
+                                    f_vend_g = '=SE(INDIRETO("A"&LIN())=""; 0; SOMASE(VENDAS!E:E; INDIRETO("A"&LIN()); VENDAS!H:H))'
+                                    
                                     f_estoque_h = '=SE(INDIRETO("C"&LIN())=""; ""; INDIRETO("C"&LIN()) - INDIRETO("G"&LIN()))'
+                                    
                                     base = str(cod_e).split(".")[0]
                                     ext = str(cod_e).split(".")[1] if "." in str(cod_e) else "0"
                                     n_cod = f"{base}.{int(ext)+1}"
-                                    if puxar: aba.update_acell(f"C{lin_p}", vend_g)
-                                    nova_linha = [n_cod, f"{nome_e} (Lote {int(ext)+1})", q_l + (est_h if puxar else 0), cu_l, f_total_e, 3, 0, f_estoque_h, pr_l, datetime.now().strftime("%d/%m/%Y"), ""]
-                                    cel_tot = aba.find("TOTAIS")
-                                    if cel_tot: aba.insert_row(nova_linha, index=cel_tot.row, value_input_option='RAW')
-                                    else: aba.append_row(nova_linha, value_input_option='RAW')
+                                    
+                                    # Atualiza o antigo se pediu para puxar
+                                    if puxar: 
+                                        try: aba.update_acell(f"C{lin_p}", vend_g)
+                                        except: pass
+
+                                    # Nova linha com as 3 fórmulas injetadas
+                                    nova_linha = [
+                                        n_cod, f"{nome_e} (Lote {int(ext)+1})", 
+                                        q_l + (est_h if puxar else 0), cu_l, 
+                                        f_total_e, 3, f_vend_g, f_estoque_h, 
+                                        pr_l, datetime.now().strftime("%d/%m/%Y"), ""
+                                    ]
+                                    
+                                    try:
+                                        cel_tot = aba.find("TOTAIS")
+                                        aba.insert_row(nova_linha, index=cel_tot.row, value_input_option='USER_ENTERED')
+                                    except: 
+                                        aba.append_row(nova_linha, value_input_option='USER_ENTERED')
+                                        
                                     planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "NOVO LOTE", nome_e, f"Lote {n_cod}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
                                     st.success(f"Lote {n_cod} criado!"); st.cache_data.clear(); st.rerun()
 
@@ -2336,19 +2653,29 @@ elif menu_selecionado == "📦 Estoque":
         with st.form("f_est_original", clear_on_submit=True):
             c1, c2 = st.columns([1, 2]); n_c = c1.text_input("Cód."); n_n = c2.text_input("Nome")
             c3, c4, c5 = st.columns(3); n_q = c3.number_input("Qtd", 0); n_custo = c4.number_input("Custo (R$)", 0.0); n_v = c5.number_input("Venda (R$)", 0.0)
+            
             if st.form_submit_button("Salvar Novo Produto") and n_c and n_n:
                 with st.spinner("Cadastrando..."):
                     aba = planilha_mestre.worksheet("INVENTÁRIO")
+                    
+                    # 🛡️ Fórmulas Blindadas do Estoque
                     f_total_e = '=SE(INDIRETO("C"&LIN())=""; ""; ARRED(INDIRETO("C"&LIN()) * INDIRETO("D"&LIN()); 2))'
+                    f_vend_g = '=SE(INDIRETO("A"&LIN())=""; 0; SOMASE(VENDAS!E:E; INDIRETO("A"&LIN()); VENDAS!H:H))'
                     f_estoque_h = '=SE(INDIRETO("C"&LIN())=""; ""; INDIRETO("C"&LIN()) - INDIRETO("G"&LIN()))'
-                    linha_manual = [n_c, n_n, n_q, n_custo, f_total_e, 3, 0, f_estoque_h, n_v, datetime.now().strftime("%d/%m/%Y"), ""]
-                    cel_tot = aba.find("TOTAIS")
                     
-                    # 💡 A MÁGICA: USER_ENTERED ativa as fórmulas
-                    if cel_tot: aba.insert_row(linha_manual, index=cel_tot.row, value_input_option='USER_ENTERED')
-                    else: aba.append_row(linha_manual, value_input_option='USER_ENTERED')
+                    # Injeta o f_vend_g na coluna G
+                    linha_manual = [
+                        n_c, n_n, n_q, n_custo, f_total_e, 3, f_vend_g, f_estoque_h, n_v, datetime.now().strftime("%d/%m/%Y"), ""
+                    ]
                     
-                    planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CADASTRO", n_n, f"Cód: {n_c}", st.session_state.get('usuario_logado', 'Bia')], value_input_option='RAW')
+                    try:
+                        cel_tot = aba.find("TOTAIS")
+                        aba.insert_row(linha_manual, index=cel_tot.row, value_input_option='USER_ENTERED')
+                    except: 
+                        aba.append_row(linha_manual, value_input_option='USER_ENTERED')
+                    
+                    # 💡 Ajuste de Vendedor (Sai a "Bia", entra o nome do usuário real)
+                    planilha_mestre.worksheet("LOG_ESTOQUE").append_row([datetime.now().strftime("%d/%m/%Y"), datetime.now().strftime("%H:%M"), "CADASTRO", n_n, f"Cód: {n_c}", st.session_state.get('usuario_logado', 'Sistema')], value_input_option='RAW')
                     st.success("✅ Cadastrado!"); st.cache_data.clear(); st.rerun()
 
     # 📜 HISTÓRICO E BUSCA FINAL (DENTRO DA ABA ESTOQUE)
@@ -2369,11 +2696,14 @@ elif menu_selecionado == "📦 Estoque":
     st.dataframe(df_ver, use_container_width=True, hide_index=True)
     
 # ==========================================
-# --- SEÇÃO 4: CLIENTES ---
+# --- SEÇÃO 4: CLIENTES E CRM ---
 # ==========================================
 elif menu_selecionado == "👥 Clientes":
     st.subheader("👥 Gestão de Clientes e CRM")
 
+    # ==========================================
+    # 🎯 CRM INTACTO (Com ajuste White-Label no Zap)
+    # ==========================================
     if not df_vendas_hist.empty and not df_clientes_full.empty:
         df_v_crm = df_vendas_hist.copy()
         df_v_crm['DATA_DATETIME'] = pd.to_datetime(df_v_crm['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
@@ -2390,6 +2720,7 @@ elif menu_selecionado == "👥 Clientes":
                 df_c_crm = df_clientes_full.rename(columns={df_clientes_full.columns[0]: 'CÓD. CLIENTE', df_clientes_full.columns[1]: 'NOME', df_clientes_full.columns[2]: 'ZAP'})
                 sumidas_full = sumidas.merge(df_c_crm[['CÓD. CLIENTE', 'NOME', 'ZAP']], on='CÓD. CLIENTE', how='left')
                 
+                import urllib.parse
                 for _, cliente in sumidas_full.iterrows():
                     dias = int(cliente['DIAS_AUSENTE'])
                     nome = str(cliente['NOME'])
@@ -2399,7 +2730,7 @@ elif menu_selecionado == "👥 Clientes":
                     c_crm1.write(f"👤 **{nome}** (Última compra há {dias} dias)")
                     
                     if zap and zap != "nan":
-                        msg_recuperacao = f"Olá {nome.split(' ')[0]}! Que saudade de você aqui na Sweet Home Enxovais 🌸. Preparamos novidades lindas e um mimo especial para você. Como você está?"
+                        msg_recuperacao = f"Olá {nome.split(' ')[0]}! Que saudade de você aqui na {NOME_LOJA} 🌸. Preparamos novidades lindas e um mimo especial para você. Como você está?"
                         c_crm2.link_button("📲 Enviar Mensagem", f"https://wa.me/55{zap}?text={urllib.parse.quote(msg_recuperacao)}", use_container_width=True)
                     else:
                         c_crm2.write("❌ Sem Zap")
@@ -2409,11 +2740,43 @@ elif menu_selecionado == "👥 Clientes":
 
     st.divider()
 
-    # 💡 Memória para o Recibo de Confirmação
+    # ==========================================
+    # 🧠 MEMÓRIAS DO SISTEMA
+    # ==========================================
     if 'recibo_novo_cliente' not in st.session_state:
         st.session_state['recibo_novo_cliente'] = None
+    if 'form_endereco_magico' not in st.session_state:
+        st.session_state['form_endereco_magico'] = ""
 
+    # ==========================================
+    # ➕ CADASTRO DE CLIENTE COM AUTO-CEP
+    # ==========================================
     with st.expander("➕ Cadastrar Nova Cliente (Sem compra atual)", expanded=False):
+        
+        # 📍 O BUSCADOR DE CEP (Fica fora do formulário para não interferir no salvamento)
+        st.write("##### 📍 Preencher endereço rapidamente")
+        c_cep1, c_cep2, c_cep3 = st.columns([2, 1, 3])
+        cep_digitado = c_cep1.text_input("Digite o CEP", max_chars=9, placeholder="Ex: 01001000")
+        
+        c_cep2.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if c_cep2.button("🔍 Buscar Endereço", type="secondary"):
+            if cep_digitado:
+                with st.spinner("Buscando..."):
+                    dados_endereco = buscar_cep_magico(cep_digitado) # A função que criamos lá no topo!
+                    if dados_endereco:
+                        # Monta a frase bonitinha para a sua planilha
+                        endereco_montado = f"{dados_endereco.get('logradouro', '')}, Bairro {dados_endereco.get('bairro', '')}, {dados_endereco.get('localidade', '')} - {dados_endereco.get('uf', '')} | CEP: {cep_digitado}"
+                        st.session_state['form_endereco_magico'] = endereco_montado
+                        st.success("Endereço encontrado!")
+                        import time; time.sleep(1); st.rerun()
+                    else:
+                        st.error("CEP não encontrado.")
+            else:
+                st.warning("Digite o CEP.")
+
+        st.divider()
+
+        # 📝 O SEU FORMULÁRIO INTACTO (Apenas puxando a memória no campo de Endereço)
         with st.form("form_novo_manual", clear_on_submit=True):
             st.markdown("Código gerado automaticamente.")
             c1, c2 = st.columns([2, 1])
@@ -2421,7 +2784,8 @@ elif menu_selecionado == "👥 Clientes":
             n_zap = c2.text_input("WhatsApp *")
             
             c3, c4 = st.columns([3, 1])
-            n_end = c3.text_input("Endereço")
+            # A MÁGICA ACONTECE AQUI: O 'value' puxa o endereço montado pelo CEP
+            n_end = c3.text_input("Endereço", value=st.session_state['form_endereco_magico'])
             n_vale = c4.number_input("Vale Desconto", 0.0)
             
             if st.form_submit_button("Salvar Cadastro 💾"):
@@ -2435,7 +2799,6 @@ elif menu_selecionado == "👥 Clientes":
                             aba_cli_sheet = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
                             dados_c = aba_cli_sheet.get_all_values()
                             
-                            # 💡 NOVO GERADOR DE ID BLINDADO
                             if len(dados_c) > 1:
                                 ultimo_cod = str(dados_c[-1][0])
                                 try: prox_num = int(ultimo_cod.replace("CLI-", "")) + 1
@@ -2446,29 +2809,25 @@ elif menu_selecionado == "👥 Clientes":
                             codigo = f"CLI-{prox_num:03d}"
                             status_cad = "Completo" if n_end.strip() else "Incompleto"
                             
-                            # Monta a linha exata
                             linha_cliente = [codigo, n_nome.strip(), n_zap.strip(), n_end.strip(), agora, n_vale, "", status_cad]
                             
-                            # ==========================================
-                            # 💡 A TÉCNICA DAS LINHAS (FIM DA LINHA 1000)
-                            # ==========================================
                             try:
-                                # 1º Tenta achar a linha de TOTAIS (se houver) e insere acima dela
                                 cel_tot_cli = aba_cli_sheet.find("TOTAIS")
                                 aba_cli_sheet.insert_row(linha_cliente, index=cel_tot_cli.row, value_input_option='USER_ENTERED')
                             except:
-                                # 2º Se não tiver TOTAIS, lê a Coluna A e insere logo após o último texto real
                                 valores_colA = aba_cli_sheet.col_values(1)
                                 linhas_reais = [v for v in valores_colA if str(v).strip() != ""]
                                 prox_linha = len(linhas_reais) + 1
                                 aba_cli_sheet.insert_row(linha_cliente, index=prox_linha, value_input_option='USER_ENTERED')
                             
-                            # 💡 GERA O COMPROVANTE NA MEMÓRIA
                             st.session_state['recibo_novo_cliente'] = {
                                 "codigo": codigo,
                                 "nome": n_nome.strip(),
                                 "zap": n_zap.strip()
                             }
+                            
+                            # Limpa a memória do CEP para o próximo cliente
+                            st.session_state['form_endereco_magico'] = "" 
                             
                             st.cache_data.clear()
                             st.cache_resource.clear()
@@ -2478,39 +2837,38 @@ elif menu_selecionado == "👥 Clientes":
                 else:
                     st.warning("⚠️ Por favor, preencha o Nome e o WhatsApp (obrigatórios).")
 
-        # ==========================================
-        # 🧾 RECIBO DE CONFIRMAÇÃO VISUAL E HISTÓRICO
-        # ==========================================
-        if st.session_state.get('recibo_novo_cliente'):
-            recibo = st.session_state['recibo_novo_cliente']
-            st.success("✅ Cadastro Gravado com Sucesso!")
-            
-            st.info(f"👤 **Cliente:** {recibo['nome']}\n\n📱 **WhatsApp:** {recibo['zap']}\n\n🏷️ **Código Gerado:** {recibo['codigo']}")
-            
-            if st.button("✖️ Fechar Comprovante"):
-                st.session_state['recibo_novo_cliente'] = None
-                st.rerun()
+    # ==========================================
+    # 🧾 RECIBOS E HISTÓRICO (INTACTOS)
+    # ==========================================
+    if st.session_state.get('recibo_novo_cliente'):
+        recibo = st.session_state['recibo_novo_cliente']
+        st.success("✅ Cadastro Gravado com Sucesso!")
+        st.info(f"👤 **Cliente:** {recibo['nome']}\n\n📱 **WhatsApp:** {recibo['zap']}\n\n🏷️ **Código Gerado:** {recibo['codigo']}")
+        
+        if st.button("✖️ Fechar Comprovante"):
+            st.session_state['recibo_novo_cliente'] = None
+            st.rerun()
 
-        st.write("---")
-        with st.expander("🕒 Últimos Cadastros Realizados (Conferência de Segurança)", expanded=False):
-            st.write("Visualize abaixo os últimos clientes adicionados para confirmar que o sistema gravou corretamente.")
-            if not df_clientes_full.empty:
-                df_historico_cli = df_clientes_full.copy().iloc[::-1].head(5)
-                colunas_importantes = [df_clientes_full.columns[0], df_clientes_full.columns[1], df_clientes_full.columns[4], df_clientes_full.columns[7]]
-                
-                st.dataframe(
-                    df_historico_cli[colunas_importantes],
-                    column_config={
-                        df_clientes_full.columns[0]: "Código",
-                        df_clientes_full.columns[1]: "Nome",
-                        df_clientes_full.columns[4]: "Data Inclusão",
-                        df_clientes_full.columns[7]: "Status"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.caption("Ainda não há clientes na base para exibir o histórico.")
+    st.write("---")
+    with st.expander("🕒 Últimos Cadastros Realizados (Conferência de Segurança)", expanded=False):
+        st.write("Visualize abaixo os últimos clientes adicionados para confirmar que o sistema gravou corretamente.")
+        if not df_clientes_full.empty:
+            df_historico_cli = df_clientes_full.copy().iloc[::-1].head(5)
+            colunas_importantes = [df_clientes_full.columns[0], df_clientes_full.columns[1], df_clientes_full.columns[4], df_clientes_full.columns[7]]
+            
+            st.dataframe(
+                df_historico_cli[colunas_importantes],
+                column_config={
+                    df_clientes_full.columns[0]: "Código",
+                    df_clientes_full.columns[1]: "Nome",
+                    df_clientes_full.columns[4]: "Data Inclusão",
+                    df_clientes_full.columns[7]: "Status"
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.caption("Ainda não há clientes na base para exibir o histórico.")
 
     st.divider()
     
@@ -3215,29 +3573,73 @@ elif menu_selecionado == "🏭 Compras e Despesas":
                         st.error(f"Erro ao excluir: {e}")
 
     # ------------------------------------------
-    # ABA 3: CADASTRO E GESTÃO DE FORNECEDORES
+    # ABA 3: CADASTRO E GESTÃO DE FORNECEDORES (COM RECEITAWS)
     # ------------------------------------------
     with t_fornecedores:
+        
+        # ==========================================
+        # 🏢 O BUSCADOR MÁGICO DE CNPJ (RECEITA FEDERAL)
+        # ==========================================
+        if 'form_forn_nome' not in st.session_state:
+            st.session_state['form_forn_nome'] = ""
+        if 'form_forn_obs' not in st.session_state:
+            st.session_state['form_forn_obs'] = ""
+
+        st.write("#### 🔍 Preenchimento Automático por CNPJ")
+        st.info("💡 Digite o CNPJ da fábrica/fornecedor e nós buscamos a Razão Social na Receita Federal!")
+        
+        c_cnpj1, c_cnpj2, c_cnpj3 = st.columns([2, 1, 3])
+        cnpj_digitado = c_cnpj1.text_input("CNPJ (Apenas números)", max_chars=18, key="cnpj_input_api")
+        
+        c_cnpj2.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if c_cnpj2.button("🔍 Buscar Empresa", type="secondary"):
+            if cnpj_digitado:
+                with st.spinner("Consultando a base da Receita..."):
+                    dados_empresa = buscar_cnpj_magico(cnpj_digitado)
+                    if dados_empresa:
+                        # Puxa o Nome Fantasia (se tiver), senão puxa a Razão Social
+                        nome_fantasia = dados_empresa.get('fantasia', '')
+                        razao_social = dados_empresa.get('nome', '')
+                        nome_final = nome_fantasia if nome_fantasia else razao_social
+                        
+                        st.session_state['form_forn_nome'] = nome_final
+                        
+                        # Monta uma observação automática rica em detalhes
+                        end = f"{dados_empresa.get('logradouro', '')}, {dados_empresa.get('numero', '')} - {dados_empresa.get('municipio', '')}/{dados_empresa.get('uf', '')}"
+                        st.session_state['form_forn_obs'] = f"CNPJ: {cnpj_digitado} | Razão: {razao_social} | Endereço: {end}"
+                        
+                        st.success(f"✅ Empresa encontrada: {nome_final}")
+                        import time; time.sleep(1); st.rerun()
+                    else:
+                        st.error("❌ CNPJ inválido ou API da Receita indisponível no momento.")
+            else:
+                st.warning("Digite o CNPJ primeiro.")
+
+        st.divider()
+
+        # ==========================================
+        # 🤝 FORMULÁRIO DE CADASTRO
+        # ==========================================
         with st.form("form_novo_forn", clear_on_submit=True):
             st.write("#### 🤝 Cadastrar Novo Fornecedor / Fábrica")
             
             c_f1, c_f2 = st.columns(2)
-            nome_f = c_f1.text_input("Nome / Razão Social")
+            # A MÁGICA: O campo 'value' puxa a memória da Receita Federal
+            nome_f = c_f1.text_input("Nome / Razão Social", value=st.session_state['form_forn_nome'])
             cat_f = c_f2.text_input("Categoria Principal", placeholder="Ex: Roupas, Embalagens, Sistema...")
             
             c_f3, c_f4 = st.columns(2)
             tel_f = c_f3.text_input("WhatsApp de Contato")
             pix_f = c_f4.text_input("Chave PIX")
             
-            obs_f = st.text_input("Observações (Endereço, CNPJ, etc)")
+            obs_f = st.text_input("Observações (Endereço, CNPJ, etc)", value=st.session_state['form_forn_obs'])
             
-            if st.form_submit_button("Criar Fornecedor"):
+            if st.form_submit_button("Criar Fornecedor 💾", type="primary"):
                 if nome_f:
                     try:
                         aba_forn = planilha_mestre.worksheet("FORNECEDORES")
                         dados_forn = aba_forn.get_all_values()
                         
-                        # Gera o código FORN-001, FORN-002 inteligente
                         if len(dados_forn) > 1:
                             ultimo_cod = str(dados_forn[-1][0])
                             try: prox_num = int(ultimo_cod.replace("FORN-", "")) + 1
@@ -3247,17 +3649,19 @@ elif menu_selecionado == "🏭 Compras e Despesas":
                             
                         novo_cod_forn = f"FORN-{prox_num:03d}"
                         
-                        aba_forn.append_row([
-                            novo_cod_forn, nome_f.strip(), cat_f, tel_f, pix_f, obs_f
-                        ], value_input_option='RAW')
+                        aba_forn.append_row([novo_cod_forn, nome_f.strip(), cat_f, tel_f, pix_f, obs_f], value_input_option='RAW')
+                        
+                        # Limpa a memória para a próxima busca
+                        st.session_state['form_forn_nome'] = ""
+                        st.session_state['form_forn_obs'] = ""
                         
                         st.success(f"Fábrica cadastrada! Código: {novo_cod_forn}")
-                        st.cache_data.clear(); st.rerun()
+                        import time; time.sleep(1); st.cache_data.clear(); st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao cadastrar: {e}")
                 else:
                     st.warning("O Nome do Fornecedor é obrigatório.")
-        
+
         st.divider()
         st.write("#### 🗂️ Lista de Fornecedores Ativos")
         
@@ -3466,7 +3870,7 @@ elif menu_selecionado == "📢 Gestão de Marketing":
             f_data_agendada = c3.date_input("Para quando precisamos disto? (Prazo/Data do Post)")
             f_status_inicial = c4.selectbox("Status Atual", ["📥 Fila (Aguardando Início)", "✍️ Em Produção"])
             
-            if st.form_submit_button("🚀 Lançar Desafio para a Equipa!", type="primary"):
+            if st.form_submit_button("🚀 Lançar Desafio para a Equipe!", type="primary"):
                 if f_desc:
                     with st.spinner("A registar demanda..."):
                         try:
@@ -4409,6 +4813,216 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             if st.button("Limpar Resposta"):
                 st.session_state['resposta_mei_ia'] = ""
                 st.rerun()
+
+# ==========================================================
+# ⚙️ SEÇÃO 9: PAINEL DE ADMINISTRAÇÃO (CÂMARA SECRETA)
+# ==========================================================
+elif menu_selecionado == "⚙️ Painel de Administração":
+    st.title("⚙️ Painel de Administração")
+    st.write("Gestão de utilizadores e personalização da marca.")
     
+    tab_equipe, tab_marca = st.tabs(["👥 Gestão de Equipe", "🎨 Personalização (Logo)"])
+    
+    # -----------------------------------------------------
+    # ABA 1: GESTÃO DE EQUIPE E HIERARQUIA
+    # -----------------------------------------------------
+    with tab_equipe:
+        try:
+            aba_cred = planilha_mestre.worksheet("CREDENCIAIS")
+            dados_cred = aba_cred.get_all_values()
+            df_cred = pd.DataFrame(dados_cred[1:], columns=dados_cred[0]) if len(dados_cred) > 1 else pd.DataFrame(columns=['NOME', 'USUARIO', 'SENHA', 'NIVEL', 'STATUS', 'CARGO'])
+        except: df_cred = pd.DataFrame()
 
+        st.write("### 👥 Utilizadores Atuais")
+        if not df_cred.empty:
+            # Prepara as colunas para visualização (incluindo o Cargo se existir)
+            colunas_view = ['NOME', 'USUARIO', 'NIVEL', 'STATUS']
+            if 'CARGO' in df_cred.columns:
+                colunas_view.insert(2, 'CARGO') # Insere o Cargo no meio da tabela
+                
+            df_view = df_cred[colunas_view].copy()
+            def style_status(val):
+                if val == "Ativo": return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+                if val == "Bloqueado": return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                return ''
+            st.dataframe(df_view.style.applymap(style_status, subset=['STATUS']), use_container_width=True, hide_index=True)
+        
+        st.divider()
+        col_add, col_edit = st.columns(2)
 
+        with col_add:
+            st.write("#### ➕ Novo Funcionário")
+            with st.form("form_add_user", clear_on_submit=True):
+                n_nome = st.text_input("Nome Completo")
+                # NOVO: Campo de texto livre para o cliente colocar a função exata
+                n_cargo = st.text_input("Cargo na Empresa (Ex: Sub-Gerente, Estoquista)", help="Para organização interna da equipe.")
+                n_user = st.text_input("Nome de Utilizador (Login)")
+                n_senha = st.text_input("Palavra-passe Provisória", type="password")
+                # NOVO: Regra do sistema vinculada aos poderes da conta
+                n_nivel = st.selectbox("Perfil de Permissões no Sistema", ["Operacional (Limitado)", "Gerência (Intermediário)", "Admin (Acesso Total)"])
+                
+                if st.form_submit_button("Criar Utilizador 💾", type="primary"):
+                    if n_nome and n_user and n_senha and n_cargo:
+                        with st.spinner("A criar perfis de segurança..."):
+                            # Salva os 6 dados na ordem exata da planilha (com o Cargo na coluna F)
+                            aba_cred.append_row([n_nome, n_user, gerar_hash_senha(n_senha), n_nivel, "Ativo", n_cargo], value_input_option='USER_ENTERED')
+                            st.success("Criado com sucesso!"); st.cache_data.clear(); st.rerun()
+                    else: st.warning("Preencha todos os campos do formulário.")
+
+        with col_edit:
+            st.write("#### 🔒 Bloquear Acessos")
+            with st.form("form_edit_user"):
+                if not df_cred.empty:
+                    u_alvo = st.selectbox("Selecione o Utilizador", ["---"] + df_cred['USUARIO'].tolist())
+                    u_novo_status = st.radio("Status do Acesso", ["Ativo", "Bloqueado"], horizontal=True)
+                    u_nova_senha = st.text_input("Redefinir Palavra-passe (Opcional)", type="password")
+                    
+                    if st.form_submit_button("Aplicar Políticas 🛡️"):
+                        if u_alvo != "---":
+                            if u_alvo == st.session_state.get('usuario_logado') and u_novo_status == "Bloqueado":
+                                st.error("Não pode bloquear a si mesmo.")
+                            else:
+                                with st.spinner("Alterando permissões..."):
+                                    celula_user = aba_cred.find(u_alvo, in_column=2)
+                                    aba_cred.update_cell(celula_user.row, 5, u_novo_status)
+                                    if u_nova_senha.strip() != "": aba_cred.update_cell(celula_user.row, 3, gerar_hash_senha(u_nova_senha))
+                                    st.success("Atualizado!"); st.cache_data.clear(); st.rerun()
+                else: st.info("Aguardando base de dados.")
+
+    # -----------------------------------------------------
+    # ABA 2: PERSONALIZAÇÃO DA MARCA E CORES INTELIGENTES
+    # -----------------------------------------------------
+    with tab_marca:
+        # Função Ninja para salvar/atualizar chaves na planilha (se já não estiver declarada)
+        def atualizar_config(chave, valor):
+            aba_conf = planilha_mestre.worksheet("CONFIGURACOES")
+            try:
+                celula = aba_conf.find(chave, in_column=1)
+                aba_conf.update_cell(celula.row, 2, valor)
+            except:
+                aba_conf.append_row([chave, valor])
+
+        # 🏢 PARTE 1: ALTERAÇÃO DO NOME DA EMPRESA
+        st.write("### 🏢 Nome de Exibição do Sistema")
+        with st.form("form_nome_empresa"):
+            c_nome1, c_nome2 = st.columns([3, 1])
+            novo_nome_loja = c_nome1.text_input("Nome da Loja/Empresa", value=NOME_LOJA)
+            
+            # Alinhamento vertical do botão
+            c_nome2.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            
+            # O st.rerun() SÓ PODE ACONTECER se o botão for clicado!
+            if c_nome2.form_submit_button("Atualizar Nome 💾", type="primary", use_container_width=True):
+                if novo_nome_loja.strip() != "":
+                    with st.spinner("A atualizar nome no banco de dados..."):
+                        atualizar_config("NOME_LOJA", novo_nome_loja.strip())
+                        st.success("✅ Nome atualizado! O sistema será reiniciado.")
+                        import time
+                        time.sleep(1)
+                        st.cache_data.clear()
+                        st.cache_resource.clear()
+                        st.rerun()
+                else:
+                    st.warning("O nome não pode ficar vazio.")
+                    
+        st.divider()
+
+        # 🎨 PARTE 2: LOGOTIPO E CORES (O código que já criamos continua aqui abaixo)
+        st.write("### 🎨 Identidade Visual e Inteligência de Cores")
+        st.write("Faça o upload do logótipo. O sistema tentará extrair a cor principal automaticamente para pintar os botões e os menus!")
+        
+        # Função Ninja para salvar/atualizar chaves na planilha sem dar erro
+        def atualizar_config(chave, valor):
+            aba_conf = planilha_mestre.worksheet("CONFIGURACOES")
+            try:
+                celula = aba_conf.find(chave, in_column=1)
+                aba_conf.update_cell(celula.row, 2, valor)
+            except:
+                aba_conf.append_row([chave, valor])
+
+        c_logo1, c_logo2 = st.columns([1, 2])
+        
+        with c_logo1:
+            st.write("**Logo Atual:**")
+            try: st.image(LOGO_URL, width=150)
+            except: st.write("Logo não disponível.")
+            
+        with c_logo2:
+            with st.form("form_nova_logo", clear_on_submit=True):
+                img_nova_logo = st.file_uploader("Selecione a Nova Logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+                
+                if st.form_submit_button("Substituir Logótipo e Extrair Cor 🚀", type="primary"):
+                    if img_nova_logo:
+                        with st.spinner("A analisar os pixeis da imagem e a gerar paleta inteligente..."):
+                            # 1. Inteligência Artificial: Matemática de Cores (UI/UX)
+                            try:
+                                from PIL import Image
+                                import io
+                                imagem_pil = Image.open(io.BytesIO(img_nova_logo.getvalue())).convert("RGB")
+                                imagem_pil = imagem_pil.resize((50, 50)) 
+                                cores = imagem_pil.getcolors(2500)
+                                cores.sort(key=lambda x: x[0], reverse=True)
+                                
+                                for count, cor in cores:
+                                    r, g, b = cor
+                                    # Ignora branco puro e preto puro para achar a cor real da logo
+                                    if not (r>240 and g>240 and b>240) and not (r<15 and g<15 and b<15):
+                                        # COR 1: A Cor Pura (Para Botões e Linha Direita)
+                                        cor_dominante_hex = '#%02x%02x%02x' % (r, g, b)
+                                        
+                                        # COR 2: O Fundo do Menu (Mistura a cor pura com 92% de Branco)
+                                        r_sec = int(r + (255 - r) * 0.92)
+                                        g_sec = int(g + (255 - g) * 0.92)
+                                        b_sec = int(b + (255 - b) * 0.92)
+                                        cor_secundaria_hex = '#%02x%02x%02x' % (r_sec, g_sec, b_sec)
+                                        
+                                        # COR 3: O Texto (Escurece a cor pura em 80% para dar contraste de leitura)
+                                        r_txt = int(r * 0.20)
+                                        g_txt = int(g * 0.20)
+                                        b_txt = int(b * 0.20)
+                                        cor_texto_hex = '#%02x%02x%02x' % (r_txt, g_txt, b_txt)
+                                        
+                                        # Atualiza a paleta completa no banco de dados automaticamente!
+                                        atualizar_config("COR_PRIMARIA", cor_dominante_hex)
+                                        atualizar_config("COR_SECUNDARIA", cor_secundaria_hex)
+                                        atualizar_config("COR_TEXTO", cor_texto_hex)
+                                        break
+                            except Exception as e:
+                                print(f"Erro ao extrair e calcular cores: {e}")
+
+                            # 2. Sobe a imagem pro Cloudinary
+                            id_logo, link_nova_logo = upload_para_cloudinary(img_nova_logo.getvalue(), "logo_oficial_cliente", "Configuracoes")
+                            
+                            if link_nova_logo:
+                                atualizar_config("LOGO_URL", link_nova_logo)
+                                st.success("✅ Logótipo e Paleta visual calculada com sucesso! A repintar o ecrã...")
+                                import time
+                                time.sleep(2)
+                                st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                            else:
+                                st.error("Falha no upload para o servidor de imagens.")
+                    else:
+                        st.warning("⚠️ Selecione uma imagem primeiro.")
+
+        st.divider()
+        
+        # 🖌️ FERRAMENTA ADICIONAL: EDITOR MANUAL DE CORES
+        st.write("### 🖌️ Editor Manual de Cores (Ajuste Fino)")
+        st.write("O sistema escolheu uma cor automaticamente. Se preferir outro tom, use os selecionadores abaixo:")
+        
+        with st.form("form_cores_manuais"):
+            cc1, cc2, cc3 = st.columns(3)
+            nova_cor_primaria = cc1.color_picker("Cor Principal (Botões)", COR_PRIMARIA)
+            nova_cor_secundaria = cc2.color_picker("Fundo do Menu Lateral", COR_SECUNDARIA)
+            nova_cor_texto = cc3.color_picker("Cor das Fontes", COR_TEXTO)
+            
+            if st.form_submit_button("Salvar Nova Paleta de Cores 🎨", type="primary"):
+                with st.spinner("A repintar o sistema..."):
+                    atualizar_config("COR_PRIMARIA", nova_cor_primaria)
+                    atualizar_config("COR_SECUNDARIA", nova_cor_secundaria)
+                    atualizar_config("COR_TEXTO", nova_cor_texto)
+                    
+                    st.success("✅ Cores atualizadas!")
+                    import time
+                    time.sleep(1)
+                    st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
