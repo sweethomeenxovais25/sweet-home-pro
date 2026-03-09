@@ -650,34 +650,41 @@ if menu_selecionado == "🛒 Vendas":
     with st.container(border=True):
         st.markdown("### 🛍️ Adicionar Produtos")
         
-        # Ajustamos as proporções para a caixa preencher melhor a tela e sumir com a lacuna
         c_p1, c_p2, c_p3, c_p4 = st.columns([3.5, 1, 1, 1])
         
-        # 1. Seleção do Produto
+        # 💡 FUNÇÃO DE ESTABILIZAÇÃO: Atualiza o preço sem quebrar a tela
+        def atualizar_preco_dinamico():
+            if 'venda_produto_sel' in st.session_state:
+                cod_escolhido = st.session_state['venda_produto_sel'].split(" - ")[0]
+                st.session_state['venda_val_input'] = limpar_v(banco_de_produtos.get(cod_escolhido, {}).get('venda', 0.0))
+
+        # 1. Seleção do Produto (Agora com o gatilho on_change para puxar o preço)
         p_sel = c_p1.selectbox(
             "Item do Estoque", 
             sorted(lista_selecao_limpa), 
-            key="venda_produto_sel"
+            key="venda_produto_sel",
+            on_change=atualizar_preco_dinamico
         )
         
-        # ✅ TRAVA DE SEGURANÇA: Só tenta o split se p_sel não for nulo
+        # ✅ TRAVA DE SEGURANÇA MANTIDA
         if p_sel:
             cod_p_temp = p_sel.split(" - ")[0]
-            # 2. Recuperação do preço direto da planilha
             preco_da_planilha = limpar_v(banco_de_produtos.get(cod_p_temp, {}).get('venda', 0.0))
+            
+            # Se for a primeira vez que a tela carrega, o valor inicial é definido
+            if 'venda_val_input' not in st.session_state:
+                st.session_state['venda_val_input'] = preco_da_planilha
         else:
             st.warning("⚠️ O estoque parece estar vazio ou o produto não foi carregado. Tente sincronizar a planilha.")
-            st.stop() # Interrompe a execução deste bloco para evitar o erro abaixo
+            st.stop()
         
-        # 3. Campos de entrada
+        # 3. Campos de entrada (CHAVES ESTÁTICAS E SEGURAS)
         qtd_v = c_p2.number_input("Qtd", value=1, min_value=1, key="venda_qtd_input")
         
-        # O segredo está aqui: o value recebe o preco_da_planilha e a KEY muda conforme o produto
-        # Isso força o Streamlit a atualizar o valor na tela instantaneamente
-        val_v = c_p3.number_input("Preço Un. (R$)", value=preco_da_planilha, min_value=0.0, step=0.01, key=f"preco_dinamico_{cod_p_temp}")
+        # 💡 O SEGREDO: Usamos a chave 'venda_val_input'. O Streamlit atualiza sozinho sem piscar!
+        val_v = c_p3.number_input("Preço Un. (R$)", min_value=0.0, step=0.01, key="venda_val_input")
 
         with c_p4:
-            # Solução definitiva de alinhamento: empurra o botão exatamente a altura do texto "Preço Un. (R$)"
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             
             if st.button("➕ Adicionar", use_container_width=True):
@@ -694,7 +701,6 @@ if menu_selecionado == "🛒 Vendas":
                     "subtotal": qtd_v * val_v
                 }
                 
-                # --- A MÁGICA ENTRA AQUI ---
                 cesta_temporaria = st.session_state['carrinho']
                 cesta_temporaria.append(item_carrinho)
                 st.session_state['carrinho'] = cesta_temporaria
@@ -712,181 +718,186 @@ if menu_selecionado == "🛒 Vendas":
             
             subtotal_venda = df_car['subtotal'].sum()
             
-            col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
-            desc_v = col_f1.number_input("Desconto Total na Compra (R$)", 0.0, key="venda_desc_total")
-            
-            total_com_desconto = subtotal_venda - desc_v
-            col_f2.metric("Subtotal", f"R$ {subtotal_venda:,.2f}")
-            col_f3.metric("Total a Pagar", f"R$ {total_com_desconto:,.2f}", delta=f"- R$ {desc_v:,.2f}" if desc_v > 0 else None)
+            # 💡 BLINDAGEM: O Formulário isola o Desconto e os botões finais do resto da página
+            with st.form("form_finalizacao", clear_on_submit=True):
+                col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
+                
+                # Este input agora está protegido e não causa 'refresh' ao digitar
+                desc_v = col_f1.number_input("Desconto Total na Compra (R$)", 0.0, step=1.0)
+                
+                col_f2.metric("Subtotal", f"R$ {subtotal_venda:,.2f}")
+                col_f3.write("O Total Final será calculado no Recibo após aplicar o desconto.")
 
-            c_btn1, c_btn2 = st.columns(2)
-            if c_btn1.button("🗑️ Limpar Tudo", use_container_width=True):
-                st.session_state['carrinho'] = []
-                st.cache_data.clear()
-                st.rerun()
+                c_btn1, c_btn2 = st.columns(2)
+                
+                # Como estamos dentro de um Form, usamos form_submit_button
+                btn_limpar = c_btn1.form_submit_button("🗑️ Limpar Tudo", use_container_width=True)
+                btn_finalizar = c_btn2.form_submit_button("Finalizar Venda 🚀", type="primary", use_container_width=True)
 
-            if c_btn2.button("Finalizar Venda 🚀", type="primary", use_container_width=True):
-                # Validação
-                if c_sel == "*** NOVO CLIENTE ***" and (not c_nome_novo or not c_zap):
-                    st.error("⚠️ Preencha Nome e Zap para novo cliente!"); st.stop()
+                if btn_limpar:
+                    st.session_state['carrinho'] = []
+                    st.cache_data.clear()
+                    st.rerun()
 
-                # 👇 Tudo daqui para baixo agora pertence SOMENTE ao clique do botão!
-                with st.spinner("Salvando venda e gerando recibo..."):
-                    try:
-                        # 1. Identificação/Cadastro do Cliente
-                        if c_sel == "*** NOVO CLIENTE ***":
-                            nome_cli = c_nome_novo.strip()
+                if btn_finalizar:
+                    # O cálculo do total final agora acontece silenciosamente após o clique
+                    total_com_desconto = subtotal_venda - desc_v
+                    
+                    # Validação
+                    if c_sel == "*** NOVO CLIENTE ***" and (not c_nome_novo or not c_zap):
+                        st.error("⚠️ Preencha Nome e Zap para novo cliente!")
+                        st.stop()
+
+                    # 👇 TUDO AQUI PARA BAIXO FOI MANTIDO INTACTO CONFORME O SEU CÓDIGO ORIGINAL 👇
+                    with st.spinner("Salvando venda e gerando recibo..."):
+                        try:
+                            # 1. Identificação/Cadastro do Cliente
+                            if c_sel == "*** NOVO CLIENTE ***":
+                                nome_cli = c_nome_novo.strip()
+                                if not modo_teste:
+                                    aba_cli = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
+                                    dados_c = aba_cli.get_all_values()
+                                    nomes_up = [l[1].strip().upper() for l in dados_c[1:] if len(l) > 1]
+                                    
+                                    if nome_cli.upper() in nomes_up:
+                                        # Se achar, descobre a linha correta baseada na lista filtrada (+1 pelo cabeçalho)
+                                        idx_encontrado = nomes_up.index(nome_cli.upper()) + 1
+                                        cod_cli = dados_c[idx_encontrado][0]
+                                    else:
+                                        # 💡 GERADOR INTELIGENTE (Evita pular pro 1000)
+                                        try:
+                                            ultimo_cod_cli = str(dados_c[-1][0])
+                                            prox_num_cli = int(ultimo_cod_cli.replace("CLI-", "")) + 1
+                                        except:
+                                            prox_num_cli = len(dados_c)
+                                        
+                                        cod_cli = f"CLI-{prox_num_cli:03d}"
+                                        
+                                        # 💡 MONTAGEM DA LINHA
+                                        linha_novo_cli = [cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0.0, "", "Incompleto"]
+                                        
+                                        # 💡 TÉCNICA DAS LINHAS
+                                        try:
+                                            cel_tot_cli = aba_cli.find("TOTAIS")
+                                            aba_cli.insert_row(linha_novo_cli, index=cel_tot_cli.row, value_input_option='USER_ENTERED')
+                                        except:
+                                            valores_colA = aba_cli.col_values(1)
+                                            linhas_reais = [v for v in valores_colA if str(v).strip() != ""]
+                                            prox_linha = len(linhas_reais) + 1
+                                            aba_cli.insert_row(linha_novo_cli, index=prox_linha, value_input_option='USER_ENTERED')
+                                else: 
+                                    cod_cli = "CLI-TESTE"
+                            else:
+                                cod_cli = c_sel.split(" - ")[0]
+                                nome_cli = banco_de_clientes[cod_cli]['nome']
+
+                            # 2. Gravação de Itens (Loop na Planilha - BLINDADO SAAS)
                             if not modo_teste:
-                                aba_cli = planilha_mestre.worksheet("CARTEIRA DE CLIENTES")
-                                dados_c = aba_cli.get_all_values()
-                                nomes_up = [l[1].strip().upper() for l in dados_c[1:] if len(l) > 1]
-                                
-                                if nome_cli.upper() in nomes_up:
-                                    # Se achar, descobre a linha correta baseada na lista filtrada (+1 pelo cabeçalho)
-                                    idx_encontrado = nomes_up.index(nome_cli.upper()) + 1
-                                    cod_cli = dados_c[idx_encontrado][0]
-                                else:
-                                    # 💡 GERADOR INTELIGENTE (Evita pular pro 1000)
+                                aba_v = planilha_mestre.worksheet("VENDAS")
+                                for item in st.session_state['carrinho']:
+                                    # Distribuição proporcional do desconto por item para manter lucro exato
+                                    proporcao_desc = (item['subtotal'] / subtotal_venda) if subtotal_venda > 0 else 0
+                                    desconto_proporcional = desc_v * proporcao_desc
+                                    desc_percentual = desconto_proporcional / item['subtotal'] if item['subtotal'] > 0 else 0
+                                    
+                                    t_liq_item = item['subtotal'] - desconto_proporcional
+                                    eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
+                                    
+                                    # 🛡️ Fórmulas Inteligentes
+                                    f_k = '=SE(INDIRETO("I"&LIN())=""; ""; ARRED(INDIRETO("I"&LIN()) * (1 - INDIRETO("J"&LIN())); 2))'
+                                    f_l = '=SE(INDIRETO("H"&LIN())=""; ""; ARRED(INDIRETO("H"&LIN()) * INDIRETO("K"&LIN()); 2))'
+                                    f_m = '=SE(INDIRETO("L"&LIN())=""; ""; ARRED(INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())); 2))'
+                                    f_n = '=SE(INDIRETO("L"&LIN())=""; ""; SEERRO(INDIRETO("M"&LIN()) / INDIRETO("L"&LIN()); ""))'
+                                    f_r = '=SE(INDIRETO("L"&LIN())=""; ""; SE(INDIRETO("P"&LIN())="Não"; INDIRETO("L"&LIN()); 0))'
+                                    
+                                    # 💡 SUA FÓRMULA DE SALDO DEVEDOR E ATRASO
+                                    f_u = '=SE(INDIRETO("L"&LIN())=""; ""; SE(ARRUMAR(MINÚSCULA(INDIRETO("P"&LIN())))="não"; 0; MÁXIMO(0; INDIRETO("L"&LIN()) - INDIRETO("T"&LIN()))))'
+                                    f_atraso = '=SE(INDIRETO("V"&LIN())=""; ""; SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN()))))'
+                                    
+                                    linha = [
+                                        "", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, 
+                                        item['cod'], item['nome'], item['custo'], item['qtd'], item['preco'], 
+                                        desc_percentual, f_k, f_l, f_m, f_n, metodo, eh_parc, n_p, f_r, 
+                                        t_liq_item/n_p if eh_parc=="Sim" else 0, 
+                                        t_liq_item if eh_parc=="Não" else 0, 
+                                        f_u,  
+                                        detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", 
+                                        "Pendente" if eh_parc=="Sim" else "Pago", f_atraso
+                                    ]
+                                    
                                     try:
-                                        ultimo_cod_cli = str(dados_c[-1][0])
-                                        prox_num_cli = int(ultimo_cod_cli.replace("CLI-", "")) + 1
+                                        idx_ins = aba_v.find("TOTAIS").row
+                                        aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
                                     except:
-                                        prox_num_cli = len(dados_c)
-                                    
-                                    cod_cli = f"CLI-{prox_num_cli:03d}"
-                                    
-                                    # 💡 MONTAGEM DA LINHA (8 Colunas cravadas: Cód, Nome, Fone, Endereço, Data, Vale(0.0), Vazio, Status)
-                                    linha_novo_cli = [cod_cli, nome_cli, c_zap.strip(), "", datetime.now().strftime("%d/%m/%Y"), 0.0, "", "Incompleto"]
-                                    
-                                    # 💡 TÉCNICA DAS LINHAS (Fim do Bug da Linha 1000)
-                                    try:
-                                        # Tenta achar "TOTAIS" na aba de clientes (se houver)
-                                        cel_tot_cli = aba_cli.find("TOTAIS")
-                                        aba_cli.insert_row(linha_novo_cli, index=cel_tot_cli.row, value_input_option='USER_ENTERED')
-                                    except:
-                                        # Se não achar TOTAIS, injeta na primeira linha vazia com base na Coluna A
-                                        valores_colA = aba_cli.col_values(1)
-                                        linhas_reais = [v for v in valores_colA if str(v).strip() != ""]
-                                        prox_linha = len(linhas_reais) + 1
-                                        aba_cli.insert_row(linha_novo_cli, index=prox_linha, value_input_option='USER_ENTERED')
-                            else: 
-                                cod_cli = "CLI-TESTE"
-                        else:
-                            cod_cli = c_sel.split(" - ")[0]
-                            nome_cli = banco_de_clientes[cod_cli]['nome']
+                                        aba_v.append_row(linha, value_input_option='USER_ENTERED')
 
-                        # 2. Gravação de Itens (Loop na Planilha - BLINDADO SAAS)
-                        if not modo_teste:
-                            aba_v = planilha_mestre.worksheet("VENDAS")
-                            for item in st.session_state['carrinho']:
-                                # Distribuição proporcional do desconto por item para manter lucro exato
-                                proporcao_desc = (item['subtotal'] / subtotal_venda) if subtotal_venda > 0 else 0
-                                desconto_proporcional = desc_v * proporcao_desc
-                                desc_percentual = desconto_proporcional / item['subtotal'] if item['subtotal'] > 0 else 0
-                                
-                                t_liq_item = item['subtotal'] - desconto_proporcional
-                                eh_parc = "Sim" if metodo == "Sweet Flex" else "Não"
-                                
-                                # 🛡️ Fórmulas Inteligentes (Injetadas linha por linha com proteção contra erros visuais)
-                                f_k = '=SE(INDIRETO("I"&LIN())=""; ""; ARRED(INDIRETO("I"&LIN()) * (1 - INDIRETO("J"&LIN())); 2))'
-                                f_l = '=SE(INDIRETO("H"&LIN())=""; ""; ARRED(INDIRETO("H"&LIN()) * INDIRETO("K"&LIN()); 2))'
-                                f_m = '=SE(INDIRETO("L"&LIN())=""; ""; ARRED(INDIRETO("L"&LIN()) - (INDIRETO("H"&LIN()) * INDIRETO("G"&LIN())); 2))'
-                                f_n = '=SE(INDIRETO("L"&LIN())=""; ""; SEERRO(INDIRETO("M"&LIN()) / INDIRETO("L"&LIN()); ""))'
-                                f_r = '=SE(INDIRETO("L"&LIN())=""; ""; SE(INDIRETO("P"&LIN())="Não"; INDIRETO("L"&LIN()); 0))'
-                                
-                                # 💡 SUA FÓRMULA DE SALDO DEVEDOR
-                                f_u = '=SE(INDIRETO("L"&LIN())=""; ""; SE(ARRUMAR(MINÚSCULA(INDIRETO("P"&LIN())))="não"; 0; MÁXIMO(0; INDIRETO("L"&LIN()) - INDIRETO("T"&LIN()))))'
-                                
-                                # 💡 NOVA: Fórmula de Atraso cravada com a regra do vazio
-                                f_atraso = '=SE(INDIRETO("V"&LIN())=""; ""; SE(OU(INDIRETO("W"&LIN())="Pago"; INDIRETO("W"&LIN())="Em dia"); 0; MÁXIMO(0; HOJE() - INDIRETO("V"&LIN()))))'
-                                
-                                linha = [
-                                    "", datetime.now().strftime("%d/%m/%Y"), cod_cli, nome_cli, 
-                                    item['cod'], item['nome'], item['custo'], item['qtd'], item['preco'], 
-                                    desc_percentual, f_k, f_l, f_m, f_n, metodo, eh_parc, n_p, f_r, 
-                                    t_liq_item/n_p if eh_parc=="Sim" else 0, 
-                                    t_liq_item if eh_parc=="Não" else 0, 
-                                    f_u,  # 🚀 AQUI! O robô agora injeta a fórmula na Coluna U, em vez de um número fixo!
-                                    detalhes_p[0] if (eh_parc=="Sim" and detalhes_p) else "", 
-                                    "Pendente" if eh_parc=="Sim" else "Pago", f_atraso
-                                ]
-                                
-                                # 🛡️ Tratamento de erro na inserção (Tática de Fallback)
-                                try:
-                                    idx_ins = aba_v.find("TOTAIS").row
-                                    aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
-                                except:
-                                    # Se a aba não tiver TOTAIS, insere na última linha vazia disponível
-                                    aba_v.append_row(linha, value_input_option='USER_ENTERED')
-
-                        # 3. Geração do Recibo Único e Elegante
-                        primeiro_nome_vendedor = vendedor.split(' ')[0]
-                        recibo_texto = (
-                            f"🌸 *{NOME_LOJA.upper()} - RECIBO DE COMPRA* 🌸\n"
-                            f"━━━━━━━━━━━━━━━━━━━\n"
-                            f"Olá, eu sou {primeiro_nome_vendedor}! ✨ É um prazer atender você, *{nome_cli.split(' ')[0]}*.\n"
-                            f"Aqui está o resumo detalhado da sua compra:\n\n"
-                        )
-
-                        for item in st.session_state['carrinho']:
-                            recibo_texto += f"🛍️ {item['qtd']}x {item['nome']} - R$ {item['subtotal']:,.2f}\n"
-
-                        recibo_texto += f"━━━━━━━━━━━━━━━━━━━\n"
-                        recibo_texto += f"💰 *Subtotal:* R$ {subtotal_venda:,.2f}\n"
-
-                        if desc_v > 0:
-                            recibo_texto += f"📉 *Desconto:* - R$ {desc_v:,.2f}\n"
-
-                        recibo_texto += f"✅ *TOTAL FINAL:* *R$ {total_com_desconto:,.2f}*\n\n"
-                        recibo_texto += f"💳 *Forma de Pagto:* {metodo}\n"
-                        recibo_texto += f"🗓️ *Data:* {datetime.now().strftime('%d/%m/%Y')}\n"
-
-                        if metodo == "Sweet Flex":
-                            recibo_texto += f"\n📝 *Plano de Pagamento ({n_p}x):*\n"
-                            
-                            for i, data_p in enumerate(detalhes_p):
-                                valor_parcela = total_com_desconto / n_p
-                                recibo_texto += f"🔹 {i+1}ª Parcela: {data_p} - R$ {valor_parcela:,.2f}\n"
-                            
-                            # --- NOVO BLOCO: POLÍTICA DE ATRASO DIDÁTICA ---
-                            recibo_texto += (
-                                f"\n📌 *Compromisso Flex:*\n"
-                                f"Para mantermos seu crédito sempre ativo, em caso de atraso, "
-                                f"será aplicada multa de 2% + juros de 1% ao mês (proporcional aos dias). "
-                                f"Contamos com você! 🤝\n"
+                            # 3. Geração do Recibo Único e Elegante
+                            primeiro_nome_vendedor = vendedor.split(' ')[0]
+                            recibo_texto = (
+                                f"🌸 *{NOME_LOJA.upper()} - RECIBO DE COMPRA* 🌸\n"
+                                f"━━━━━━━━━━━━━━━━━━━\n"
+                                f"Olá, eu sou {primeiro_nome_vendedor}! ✨ É um prazer atender você, *{nome_cli.split(' ')[0]}*.\n"
+                                f"Aqui está o resumo detalhado da sua compra:\n\n"
                             )
 
-                        recibo_texto += f"\n━━━━━━━━━━━━━━━━━━━\n"
-                        recibo_texto += f"👤 *Vendedor(a):* {vendedor}\n"
-                        recibo_texto += f"✨ *Obrigado pela preferência!*"
+                            for item in st.session_state['carrinho']:
+                                recibo_texto += f"🛍️ {item['qtd']}x {item['nome']} - R$ {item['subtotal']:,.2f}\n"
 
-                        st.success("✅ Venda registrada com sucesso!")
-                        st.code(recibo_texto, language="text")
-                        
-                        # 1. Inteligência: Puxa do Banco de Dados se for cliente antigo, ou da tela se for novo
-                        if c_sel == "*** NOVO CLIENTE ***":
-                            telefone_final = c_zap
-                        else:
-                            id_cli_final = c_sel.split(" - ")[0]
-                            telefone_final = banco_de_clientes[id_cli_final].get('fone', "")
+                            recibo_texto += f"━━━━━━━━━━━━━━━━━━━\n"
+                            recibo_texto += f"💰 *Subtotal:* R$ {subtotal_venda:,.2f}\n"
 
-                        # 2. Limpeza pesada igual ao CRM
-                        zap_limpo = str(telefone_final).replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+                            if desc_v > 0:
+                                recibo_texto += f"📉 *Desconto:* - R$ {desc_v:,.2f}\n"
 
-                        # 3. Proteção extra (Se já tiver 55 no banco de dados, ele não duplica)
-                        if zap_limpo.startswith("55") and len(zap_limpo) > 11:
-                            zap_limpo = zap_limpo[2:]
+                            recibo_texto += f"✅ *TOTAL FINAL:* *R$ {total_com_desconto:,.2f}*\n\n"
+                            recibo_texto += f"💳 *Forma de Pagto:* {metodo}\n"
+                            recibo_texto += f"🗓️ *Data:* {datetime.now().strftime('%d/%m/%Y')}\n"
 
-                        st.link_button("📲 Enviar Recibo Único para o WhatsApp", f"https://wa.me/55{zap_limpo}?text={urllib.parse.quote(recibo_texto)}", use_container_width=True, type="primary")
+                            if metodo == "Sweet Flex":
+                                recibo_texto += f"\n📝 *Plano de Pagamento ({n_p}x):*\n"
+                                
+                                for i, data_p in enumerate(detalhes_p):
+                                    valor_parcela = total_com_desconto / n_p
+                                    recibo_texto += f"🔹 {i+1}ª Parcela: {data_p} - R$ {valor_parcela:,.2f}\n"
+                                
+                                recibo_texto += (
+                                    f"\n📌 *Compromisso Flex:*\n"
+                                    f"Para mantermos seu crédito sempre ativo, em caso de atraso, "
+                                    f"será aplicada multa de 2% + juros de 1% ao mês (proporcional aos dias). "
+                                    f"Contamos com você! 🤝\n"
+                                )
 
-                        # Limpeza Final (AGORA SIM, BEM GUARDADA NO LUGAR CERTO)
-                        st.session_state['carrinho'] = []
-                        st.cache_data.clear()
-                        st.cache_resource.clear()
-                        
-                    except Exception as e:
-                        st.error(f"Erro ao processar venda: {e}")
+                            recibo_texto += f"\n━━━━━━━━━━━━━━━━━━━\n"
+                            recibo_texto += f"👤 *Vendedor(a):* {vendedor}\n"
+                            recibo_texto += f"✨ *Obrigado pela preferência!*"
 
+                            st.success("✅ Venda registrada com sucesso!")
+                            st.code(recibo_texto, language="text")
+                            
+                            # 1. Inteligência de Zap
+                            if c_sel == "*** NOVO CLIENTE ***":
+                                telefone_final = c_zap
+                            else:
+                                id_cli_final = c_sel.split(" - ")[0]
+                                telefone_final = banco_de_clientes[id_cli_final].get('fone', "")
+
+                            # 2. Limpeza pesada
+                            zap_limpo = str(telefone_final).replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+                            # 3. Proteção extra
+                            if zap_limpo.startswith("55") and len(zap_limpo) > 11:
+                                zap_limpo = zap_limpo[2:]
+
+                            st.link_button("📲 Enviar Recibo Único para o WhatsApp", f"https://wa.me/55{zap_limpo}?text={urllib.parse.quote(recibo_texto)}", use_container_width=True, type="primary")
+
+                            # Limpeza Final
+                            st.session_state['carrinho'] = []
+                            st.cache_data.clear()
+                            st.cache_resource.clear()
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao processar venda: {e}")
+                            
     # --- MANTENDO HISTÓRICO E BORRACHA MÁGICA ---
     st.divider()
     with st.expander("📝 Ver Histórico de Vendas Recentes (Últimas 10)", expanded=False):
@@ -904,8 +915,8 @@ if menu_selecionado == "🛒 Vendas":
     # [O código da Borracha Mágica (Edição de Vendas) continua exatamente como você já tinha abaixo deste ponto]
 
 # ==========================================
-    # ✏️ BORRACHA MÁGICA: EDIÇÃO E EXCLUSÃO (COM RADAR E AUDITORIA)
-    # ==========================================
+# ✏️ BORRACHA MÁGICA: EDIÇÃO E EXCLUSÃO (COM RADAR E AUDITORIA)
+# ==========================================
     with st.expander("✏️ Corrigir ou Excluir Venda (Radar de Vendas)", expanded=False):
         st.write("Pesquise por uma venda antiga ou escolha uma recente para corrigir cliente, produto, valores ou método de pagamento.")
         
@@ -5026,4 +5037,5 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
