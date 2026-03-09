@@ -625,31 +625,45 @@ if menu_selecionado == "🛒 Vendas":
                                 aba_v.insert_row(linha, index=idx_ins, value_input_option='USER_ENTERED')
 
                         # 3. Geração do Recibo Único e Elegante
+                        primeiro_nome_vendedor = vendedor.split(' ')[0]
                         recibo_texto = (
-                            f"🌸 *DOCE LAR - RECIBO DE COMPRA* 🌸\n"
+                            f"🌸 *{NOME_LOJA.upper()} - RECIBO DE COMPRA* 🌸\n"
                             f"━━━━━━━━━━━━━━━━━━━\n"
-                            f"Olá, eu sou a Bia! ✨ É um prazer atender você, *{nome_cli.split(' ')[0]}*.\n"
+                            f"Olá, eu sou {primeiro_nome_vendedor}! ✨ É um prazer atender você, *{nome_cli.split(' ')[0]}*.\n"
                             f"Aqui está o resumo detalhado da sua compra:\n\n"
                         )
+
                         for item in st.session_state['carrinho']:
                             recibo_texto += f"🛍️ {item['qtd']}x {item['nome']} - R$ {item['subtotal']:,.2f}\n"
-                        
+
                         recibo_texto += f"━━━━━━━━━━━━━━━━━━━\n"
                         recibo_texto += f"💰 *Subtotal:* R$ {subtotal_venda:,.2f}\n"
+
                         if desc_v > 0:
                             recibo_texto += f"📉 *Desconto:* - R$ {desc_v:,.2f}\n"
+
                         recibo_texto += f"✅ *TOTAL FINAL:* *R$ {total_com_desconto:,.2f}*\n\n"
                         recibo_texto += f"💳 *Forma de Pagto:* {metodo}\n"
                         recibo_texto += f"🗓️ *Data:* {datetime.now().strftime('%d/%m/%Y')}\n"
-                        
+
                         if metodo == "Sweet Flex":
                             recibo_texto += f"\n📝 *Plano de Pagamento ({n_p}x):*\n"
+                            
                             for i, data_p in enumerate(detalhes_p):
-                                recibo_texto += f"🔹 {i+1}ª Parcela: {data_p} - R$ {total_com_desconto/n_p:,.2f}\n"
-                        
+                                valor_parcela = total_com_desconto / n_p
+                                recibo_texto += f"🔹 {i+1}ª Parcela: {data_p} - R$ {valor_parcela:,.2f}\n"
+                            
+                            # --- NOVO BLOCO: POLÍTICA DE ATRASO DIDÁTICA ---
+                            recibo_texto += (
+                                f"\n📌 *Compromisso Flex:*\n"
+                                f"Para mantermos seu crédito sempre ativo, em caso de atraso, "
+                                f"será aplicada multa de 2% + juros de 1% ao mês (proporcional aos dias). "
+                                f"Contamos com você! 🤝\n"
+                            )
+
                         recibo_texto += f"\n━━━━━━━━━━━━━━━━━━━\n"
                         recibo_texto += f"👤 *Vendedor(a):* {vendedor}\n"
-                        recibo_texto += f"✨ *Obrigada pela preferência!*"
+                        recibo_texto += f"✨ *Obrigado pela preferência!*"
 
                         st.success("✅ Venda registrada com sucesso!")
                         st.code(recibo_texto, language="text")
@@ -4326,3 +4340,4 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                 st.session_state['resposta_mei_ia'] = ""
                 st.rerun()
     
+
