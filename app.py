@@ -1180,10 +1180,10 @@ elif menu_selecionado == "💰 Financeiro":
             
             # Usamos type="secondary" para o texto herdar a sua cor marrom escura elegante (COR_TEXTO)
             if c_ia2.button("🧠 Gerar Análise Data-Driven", type="secondary", use_container_width=True):
-                with st.spinner("A processar algoritmos de análise e modelagem de dados..."):
+                with st.spinner("A processar algoritmos de Unit Economics e Machine Learning..."):
                     try:
                         # =======================================================
-                        # 1. HIGIENIZAÇÃO E PREPARAÇÃO DOS DADOS
+                        # 1. HIGIENIZAÇÃO E PREPARAÇÃO DOS DADOS (AGORA COM CAC E LTV)
                         # =======================================================
                         if not df_vendas_hist.empty:
                             col_cliente = 'CLIENTE' if 'CLIENTE' in df_vendas_hist.columns else df_vendas_hist.columns[3]
@@ -1191,64 +1191,84 @@ elif menu_selecionado == "💰 Financeiro":
                             df_vendas_limpo = df_vendas_limpo[df_vendas_limpo[col_cliente].str.strip() != ""]
                             
                             total_vendas_qtd = len(df_vendas_limpo)
+                            clientes_unicos = df_vendas_limpo[col_cliente].nunique()
                             
                             col_total = 'TOTAL R$' if 'TOTAL R$' in df_vendas_limpo.columns else df_vendas_limpo.columns[11]
                             faturamento_bruto = sum(limpar_v(val) for val in df_vendas_limpo[col_total])
                             ticket_medio = (faturamento_bruto / total_vendas_qtd) if total_vendas_qtd > 0 else 0.0
                             
+                            # Produto Campeão
                             try:
                                 col_prod_nome = 'PRODUTO' if 'PRODUTO' in df_vendas_limpo.columns else df_vendas_limpo.columns[5]
                                 col_prod_cod = 'CÓD. PRÓDUTO' if 'CÓD. PRÓDUTO' in df_vendas_limpo.columns else df_vendas_limpo.columns[4]
-                                
-                                # 💡 MÁGICA: Junta o Código e o Nome para análise precisa
                                 produtos_combinados = df_vendas_limpo[col_prod_cod].astype(str) + " - " + df_vendas_limpo[col_prod_nome].astype(str)
                                 produto_top = produtos_combinados.value_counts().idxmax()
                                 freq_top = produtos_combinados.value_counts().max()
                             except:
                                 produto_top = "Indisponível"
                                 freq_top = 0
+                                
+                            # Retenção
+                            compras_por_cliente = df_vendas_limpo[col_cliente].value_counts()
+                            recorrentes = len(compras_por_cliente[compras_por_cliente > 1])
+                            taxa_retencao = (recorrentes / clientes_unicos * 100) if clientes_unicos > 0 else 0.0
                         else:
-                            total_vendas_qtd = 0
-                            faturamento_bruto = 0.0
-                            ticket_medio = 0.0
-                            produto_top = "Nenhum"
-                            freq_top = 0
+                            total_vendas_qtd, faturamento_bruto, ticket_medio = 0, 0.0, 0.0
+                            produto_top, freq_top, clientes_unicos, taxa_retencao = "Nenhum", 0, 0, 0.0
 
-                        total_despesas = len(df_despesas) if not df_despesas.empty else 0
+                        # Custos de Marketing e Unit Economics
+                        custo_marketing = 0.0
+                        if not df_despesas.empty:
+                            col_cat_d = 'CATEGORIA' if 'CATEGORIA' in df_despesas.columns else df_despesas.columns[3]
+                            col_status_d = 'STATUS' if 'STATUS' in df_despesas.columns else df_despesas.columns[5]
+                            col_val_d = 'VALOR R$' if 'VALOR R$' in df_despesas.columns else df_despesas.columns[4]
+                            
+                            mask_mkt = df_despesas[col_cat_d].astype(str).str.upper().str.contains("MARKETING|ANÚNCIO|ADS|FACEBOOK|INSTAGRAM", na=False)
+                            mask_pago = df_despesas[col_status_d].astype(str).str.upper() == "PAGO"
+                            df_mkt_pago = df_despesas[mask_mkt & mask_pago].copy()
+                            custo_marketing = sum(limpar_v(v) for v in df_mkt_pago[col_val_d]) if not df_mkt_pago.empty else 0.0
+
+                        cac_atual = custo_marketing / clientes_unicos if clientes_unicos > 0 else 0.0
+                        ltv_atual = faturamento_bruto / clientes_unicos if clientes_unicos > 0 else 0.0
+                        ratio_saude = (ltv_atual / cac_atual) if cac_atual > 0 else 0.0
 
                         # =======================================================
-                        # 2. ENGENHARIA DE PROMPT (MACHINE LEARNING & ESTRUTURA)
+                        # 2. ENGENHARIA DE PROMPT (FOCADA NO CRESCIMENTO)
                         # =======================================================
                         prompt_ceo = f"""
-                        Atue como um Cientista de Dados e um Algoritmo de Machine Learning Preditivo analisando a 'Sweet Home Enxovais'.
+                        Atue como um Cientista de Dados e Especialista em Growth (Crescimento) analisando a 'Sweet Home Enxovais'.
                         
                         DADOS OFICIAIS PARA PROCESSAMENTO:
                         - Volume Exato: {total_vendas_qtd} vendas.
                         - Faturamento Bruto: R$ {faturamento_bruto:,.2f}
                         - Ticket Médio: R$ {ticket_medio:,.2f}
-                        - Volume de Despesas Lançadas: {total_despesas} operações.
                         - Top SKU (Produto Campeão): '{produto_top}' (Vendido {freq_top} vezes).
+                        - Investimento em Marketing/Ads: R$ {custo_marketing:,.2f}
+                        - CAC (Custo de Aquisição de Cliente): R$ {cac_atual:,.2f}
+                        - LTV (Valor do Ciclo de Vida do Cliente): R$ {ltv_atual:,.2f}
+                        - Proporção LTV/CAC: {ratio_saude:.1f}x
+                        - Taxa de Retenção (Recompra): {taxa_retencao:.1f}%
 
                         REGRAS DE ENGENHARIA DO SISTEMA (CRÍTICO):
-                        1. PROIBIDO USAR O SÍMBOLO DE CIFRÃO ($): Para não causar o 'bug verde' de renderização LaTeX no sistema, nunca escreva o símbolo do dólar/cifrão. Escreva estritamente 'R$ ' (com espaço) ou 'Reais'.
+                        1. PROIBIDO USAR O SÍMBOLO DE CIFRÃO ($): Para evitar erros de formatação no painel, escreva estritamente 'R$ ' (com espaço).
                         2. EXATIDÃO MATEMÁTICA: O número de vendas é exatamente {total_vendas_qtd}. Não aproxime.
 
                         ESTRUTURA DE SAÍDA EXIGIDA (Siga os tópicos exatamente assim):
                         
-                        > **Visão Global (Sumário)**
-                        [Parágrafo direto com diagnóstico da saúde do negócio].
+                        > **Visão Global (Sumário da Saúde Financeira)**
+                        [Parágrafo direto avaliando a saúde geral do negócio baseado na retenção e eficiência de aquisição].
                         
                         ### 📊 1. Arquitetura de Indicadores
-                        [Crie uma Tabela Markdown limpa com as métricas fornecidas].
+                        [Crie uma Tabela Markdown limpa com as métricas fornecidas, incluindo as de Unit Economics].
 
-                        ### 🤖 2. Modelagem Preditiva e Clusterização Simulada
-                        [Aplique lógica de Machine Learning: baseado no ticket médio de R$ {ticket_medio:.2f} e no SKU '{produto_top}', defina 2 'Clusters' (perfis) prováveis de clientes que estão a comprar na loja e faça uma previsão sobre o comportamento futuro de recompra deles].
+                        ### 💎 2. Análise de Unit Economics (CAC x LTV) e Retenção
+                        [Analise friamente a proporção LTV/CAC de {ratio_saude:.1f}x e a Taxa de Retenção de {taxa_retencao:.1f}%. O negócio está queimando caixa, crescendo de forma orgânica ou escalando com saúde e margem?].
 
-                        ### ⚠️ 3. Lacunas de Dados (CAC e LTV)
-                        [Como Cientista de Dados, exija pragmaticamente a implementação do rastreio de Custo de Aquisição de Clientes (CAC) e Valor do Ciclo de Vida (LTV). Explique em 2 frases o risco de escalar cegamente sem estas duas métricas no sistema atual].
+                        ### 🤖 3. Modelagem Preditiva (Clusterização Simulada)
+                        [Baseado no Ticket Médio de R$ {ticket_medio:.2f} e no SKU '{produto_top}', defina 2 perfis (clusters) prováveis de clientes e faça uma previsão sobre o comportamento futuro deles].
 
-                        ### 🎯 4. Execução Pragmática
-                        [Liste 3 ações curtas e táticas focadas em otimização de funil e aumento de LTV].
+                        ### 🎯 4. Execução Pragmática (Growth Hacking)
+                        [Liste 3 ações curtas e táticas focadas em otimizar o CAC, aumentar a Retenção ou maximizar o Ticket Médio baseando-se estritamente nestes dados].
                         """
 
                         # =======================================================
@@ -1267,7 +1287,7 @@ elif menu_selecionado == "💰 Financeiro":
                         payload = {
                             "model": "llama-3.3-70b-versatile",
                             "messages": [
-                                {"role": "system", "content": "Você é um algoritmo pragmático focado em Data Science para negócios. Responde de forma ultraestruturada, usa tabelas, formatação limpa e NUNCA usa o símbolo de cifrão solto."},
+                                {"role": "system", "content": "Você é um algoritmo pragmático focado em Growth e Data Science. Responde de forma ultraestruturada, usa tabelas, formatação limpa, e NUNCA usa o símbolo de cifrão solto."},
                                 {"role": "user", "content": prompt_ceo}
                             ],
                             "temperature": 0.2
@@ -1280,13 +1300,11 @@ elif menu_selecionado == "💰 Financeiro":
                                 texto_final = resposta.json()['choices'][0]['message']['content']
                                 st.success("✅ Máquina de Decisão processada com sucesso!")
                                 
-                                # Renderização Visual Impecável
                                 with st.container(border=True):
                                     st.markdown(texto_final, unsafe_allow_html=True)
                                 
-                                # 💡 AQUI ESTÁ A MÁGICA DA CÓPIA! Um botão nativo do sistema para copiar tudo perfeito.
                                 with st.expander("📋 Copiar Relatório (Texto Bruto)"):
-                                    st.caption("Clique no ícone no canto superior direito da caixa abaixo para copiar toda a formatação perfeitamente.")
+                                    st.caption("Clique no ícone no canto superior direito da caixa abaixo para copiar a formatação.")
                                     st.code(texto_final, language="markdown")
                                     
                             else:
@@ -5160,6 +5178,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
