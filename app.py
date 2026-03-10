@@ -1185,7 +1185,6 @@ elif menu_selecionado == "💰 Financeiro":
                         total_vendas_qtd = len(df_vendas_hist) if not df_vendas_hist.empty else 0
                         total_despesas = len(df_despesas) if not df_despesas.empty else 0
                         
-                        # Localização flexível do produto campeão
                         produto_top = "Nenhum"
                         if not df_vendas_hist.empty:
                             try:
@@ -1223,7 +1222,7 @@ elif menu_selecionado == "💰 Financeiro":
                             "Content-Type": "application/json"
                         }
                         
-                        # Usamos o modelo Llama 3 70B (Um dos mais avançados do mundo hoje)
+                        # Usamos o modelo Llama 3 70B
                         payload = {
                             "model": "llama3-70b-8192",
                             "messages": [
@@ -1253,6 +1252,10 @@ elif menu_selecionado == "💰 Financeiro":
                                     st.code(resposta.text)
                         except Exception as e_req:
                             st.error(f"⚠️ Erro de conexão com o servidor da IA: {e_req}")
+
+                    # 💡 AQUI ESTÁ A "TAMPA" QUE FALTAVA PARA NÃO DAR ERRO NO ST.DIVIDER()
+                    except Exception as e_geral:
+                        st.error(f"⚠️ Erro ao processar os dados para a IA: {e_geral}")
     
     st.divider()
     
@@ -5038,6 +5041,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
