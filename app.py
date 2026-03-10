@@ -1434,56 +1434,135 @@ elif menu_selecionado == "💰 Financeiro":
             with col_t2:
                 st.metric("Recebíveis (Futuro)", f"R$ {saldo_devedor:,.2f}", help="Dinheiro que entrará via faturas do Sweet Flex no futuro. É o reflexo do Saldo Devedor visto como promessa de recebimento.")
 
-            # 4. DASHBOARD DE ANÁLISE (VERSÃO PREMIUM COM CORES DA MARCA)
-            with st.expander("📊 Análise de Desempenho e Tendências", expanded=False):
+            # 4. DASHBOARD DE GROWTH E MACHINE LEARNING (VERSÃO ENTERPRISE)
+            with st.expander("📊 Central de Inteligência e Unit Economics (CAC/LTV)", expanded=False):
                 if not df_fin.empty:
-                    t_faturamento, t_pagamentos, t_ticket = st.tabs(["📈 Faturamento", "💳 Meios de Pagamento", "🎟️ Ticket Médio"])
+                    # Preparação de Dados Globais para as abas
+                    col_cliente = 'CLIENTE' if 'CLIENTE' in df_fin.columns else df_fin.columns[3]
+                    clientes_unicos = df_fin[col_cliente].nunique()
+                    
+                    df_fin['DATA_DT'] = pd.to_datetime(df_fin['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
+                    vendas_dia = df_fin.groupby('DATA_DT')['VALOR_NUM'].sum().reset_index()
+                    
+                    # 💡 MOTOR UNIT ECONOMICS (CÁLCULO DE CAC E LTV)
+                    # 1. Busca os gastos com Marketing na aba Despesas
+                    custo_marketing = 0.0
+                    if not df_despesas.empty:
+                        col_cat_d = 'CATEGORIA' if 'CATEGORIA' in df_despesas.columns else df_despesas.columns[3]
+                        col_status_d = 'STATUS' if 'STATUS' in df_despesas.columns else df_despesas.columns[5]
+                        col_val_d = 'VALOR R$' if 'VALOR R$' in df_despesas.columns else df_despesas.columns[4]
+                        
+                        mask_mkt = df_despesas[col_cat_d].astype(str).str.upper().str.contains("MARKETING|ANÚNCIO|ADS|FACEBOOK|INSTAGRAM", na=False)
+                        mask_pago = df_despesas[col_status_d].astype(str).str.upper() == "PAGO"
+                        
+                        df_mkt_pago = df_despesas[mask_mkt & mask_pago].copy()
+                        custo_marketing = df_mkt_pago[col_val_d].apply(limpar_v).sum() if not df_mkt_pago.empty else 0.0
+
+                    # 2. As Fórmulas Sagradas do Vale do Silício
+                    cac_atual = custo_marketing / clientes_unicos if clientes_unicos > 0 else 0.0
+                    ltv_atual = vendas_brutas / clientes_unicos if clientes_unicos > 0 else 0.0
+                    ratio_saude = (ltv_atual / cac_atual) if cac_atual > 0 else 0.0
+
+                    # Renderização das Abas
+                    t_faturamento, t_growth, t_perfil, t_tendencia = st.tabs([
+                        "📈 Faturamento", "🚀 Unit Economics (CAC/LTV)", "💳 Perfil do Cliente", "🤖 Análise Preditiva"
+                    ])
                     
                     import plotly.express as px
-                    paleta_sweet = ['#31241b', '#8d5524', '#d4a373', '#f6debc'] # Marrons e Beges da marca
+                    import plotly.graph_objects as go
+                    paleta_sweet = ['#31241b', '#8d5524', '#d4a373', '#f6debc', '#e6c280'] 
 
+                    # --- ABA 1: FATURAMENTO ---
                     with t_faturamento:
-                        st.write("#### Evolução de Vendas no Tempo")
-                        df_fin['DATA_DT'] = pd.to_datetime(df_fin['DATA DA VENDA'], format='%d/%m/%Y', errors='coerce')
-                        vendas_dia = df_fin.groupby('DATA_DT')['VALOR_NUM'].sum().reset_index()
-                        
-                        # Gráfico de Área com Formatação de R$ no hover
+                        st.write("#### Evolução de Receita Diária")
                         fig_fat = px.area(vendas_dia, x='DATA_DT', y='VALOR_NUM',
                                          labels={'VALOR_NUM': 'Total Vendido', 'DATA_DT': 'Data'},
                                          color_discrete_sequence=[paleta_sweet[0]])
                         fig_fat.update_traces(hovertemplate='<b>Data:</b> %{x}<br><b>Vendido:</b> R$ %{y:,.2f}')
-                        fig_fat.update_layout(xaxis_title=None, yaxis_title="Total (R$)", margin=dict(t=10, b=10, l=0, r=0))
+                        fig_fat.update_layout(xaxis_title=None, yaxis_title="Receita (R$)", margin=dict(t=10, b=10, l=0, r=0))
                         st.plotly_chart(fig_fat, use_container_width=True)
-                    
-                    with t_pagamentos:
-                        st.write("#### Composição dos Recebimentos")
-                        vendas_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].sum().reset_index()
-                        fig_pie = px.pie(vendas_meio, values='VALOR_NUM', names='FORMA_PG', 
-                                        color_discrete_sequence=paleta_sweet,
-                                        hole=.4)
-                        fig_pie.update_traces(textposition='inside', textinfo='percent+label', 
-                                             hovertemplate='<b>%{label}</b><br>Total: R$ %{value:,.2f}')
-                        fig_pie.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0))
-                        st.plotly_chart(fig_pie, use_container_width=True)
 
-                    with t_ticket:
-                        st.write("#### Valor Médio por Venda (Ticket Médio)")
-                        # Arredondando para 2 casas decimais para evitar o erro visual
-                        ticket_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].mean().round(2).reset_index()
+                    # --- ABA 2: O MOTOR DE GROWTH (A MÁGICA ACONTECE AQUI) ---
+                    with t_growth:
+                        st.write("#### Saúde Financeira de Aquisição (O Padrão Ouro do Varejo)")
+                        st.markdown("<small>Métricas cruzadas automaticamente entre suas **Vendas** e **Despesas de Marketing**.</small>", unsafe_allow_html=True)
                         
-                        fig_ticket = px.bar(ticket_meio, x='FORMA_PG', y='VALOR_NUM',
-                                           text='VALOR_NUM',
-                                           labels={'VALOR_NUM': 'Ticket Médio (R$)', 'FORMA_PG': 'Meio de Pagto'},
-                                           color='FORMA_PG',
-                                           color_discrete_sequence=paleta_sweet)
+                        g1, g2, g3 = st.columns(3)
+                        g1.metric("Custo de Aquisição (CAC)", f"R$ {cac_atual:,.2f}", help=f"Gasto Total em Mkt (R$ {custo_marketing:.2f}) dividido por {clientes_unicos} clientes.")
+                        g2.metric("Valor do Ciclo de Vida (LTV)", f"R$ {ltv_atual:,.2f}", help="Média histórica de quanto cada cliente gasta com você ao longo do tempo.")
                         
-                        fig_ticket.update_traces(texttemplate='R$ %{text:.2f}', textposition='outside',
-                                                hovertemplate='<b>%{x}</b><br>Média: R$ %{y:,.2f}')
-                        fig_ticket.update_layout(showlegend=False, yaxis_title="Valor (R$)", xaxis_title=None)
-                        st.plotly_chart(fig_ticket, use_container_width=True)
-                        st.caption("💡 O Ticket Médio ajuda a entender qual cliente gasta mais em cada modalidade.")
+                        if ratio_saude >= 3.0:
+                            cor_ratio, emoji_ratio, status_ratio = "normal", "🏆", "Excelente"
+                        elif 1.0 < ratio_saude < 3.0:
+                            cor_ratio, emoji_ratio, status_ratio = "off", "🟡", "Atenção (Margem Baixa)"
+                        elif cac_atual == 0.0:
+                            cor_ratio, emoji_ratio, status_ratio = "normal", "🌱", "Crescimento Orgânico (CAC Zero)"
+                            ratio_saude = ltv_atual
+                        else:
+                            cor_ratio, emoji_ratio, status_ratio = "inverse", "🚨", "Prejuízo! CAC maior que LTV"
+                            
+                        texto_ratio = f"{ratio_saude:.1f}x" if cac_atual > 0 else "Orgânico"
+                        g3.metric(f"Proporção (LTV : CAC)", texto_ratio, delta=f"{emoji_ratio} {status_ratio}", delta_color=cor_ratio, help="O ideal é que o LTV seja pelo menos 3x maior que o CAC. Acima disso, você tem uma máquina de imprimir dinheiro.")
+                        
+                        if cac_atual > 0:
+                            st.progress(min(ratio_saude / 5.0, 1.0)) # Barra enche até bater a meta de 5x
+                            
+                        # Análise de Recorrência (Frequência)
+                        compras_por_cliente = df_fin[col_cliente].value_counts()
+                        recorrentes = len(compras_por_cliente[compras_por_cliente > 1])
+                        taxa_retencao = (recorrentes / clientes_unicos * 100) if clientes_unicos > 0 else 0
+                        
+                        st.write("")
+                        st.info(f"🔄 **Fidelização:** **{taxa_retencao:.1f}%** da sua base já comprou mais de uma vez. Mantenha os clientes voltando para aumentar o LTV sem gastar mais com CAC!")
+
+                    # --- ABA 3: PERFIL DE COMPRA ---
+                    with t_perfil:
+                        c_p1, c_p2 = st.columns(2)
+                        with c_p1:
+                            st.write("##### Meios de Pagamento")
+                            vendas_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].sum().reset_index()
+                            fig_pie = px.pie(vendas_meio, values='VALOR_NUM', names='FORMA_PG', 
+                                            color_discrete_sequence=paleta_sweet, hole=.4)
+                            fig_pie.update_traces(textposition='inside', textinfo='percent')
+                            fig_pie.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0), height=300)
+                            st.plotly_chart(fig_pie, use_container_width=True)
+
+                        with c_p2:
+                            st.write("##### Ticket Médio por Meio")
+                            ticket_meio = df_fin.groupby('FORMA_PG')['VALOR_NUM'].mean().round(2).reset_index()
+                            fig_ticket = px.bar(ticket_meio, x='FORMA_PG', y='VALOR_NUM', text='VALOR_NUM',
+                                               color='FORMA_PG', color_discrete_sequence=paleta_sweet)
+                            fig_ticket.update_traces(texttemplate='R$ %{text:.2f}', textposition='outside')
+                            fig_ticket.update_layout(showlegend=False, yaxis_title=None, xaxis_title=None, height=300)
+                            st.plotly_chart(fig_ticket, use_container_width=True)
+
+                    # --- ABA 4: MACHINE LEARNING SIMULADO (TENDÊNCIA MATEMÁTICA) ---
+                    with t_tendencia:
+                        st.write("#### 🤖 Suavização de Ruído e Linha de Tendência (Média Móvel)")
+                        st.markdown("<small>A linha laranja filtra os 'picos e quedas' diários para revelar a verdadeira direção do seu faturamento.</small>", unsafe_allow_html=True)
+                        
+                        if len(vendas_dia) > 3:
+                            # Algoritmo de Média Móvel (Rolling Average) - Data Science puro!
+                            vendas_dia = vendas_dia.sort_values('DATA_DT')
+                            vendas_dia['MEDIA_MOVEL_7D'] = vendas_dia['VALOR_NUM'].rolling(window=3, min_periods=1).mean()
+                            
+                            fig_trend = go.Figure()
+                            # Barras reais (Fundo)
+                            fig_trend.add_trace(go.Bar(x=vendas_dia['DATA_DT'], y=vendas_dia['VALOR_NUM'], 
+                                                       name='Receita Real', marker_color='#e0e0e0'))
+                            # Linha de Tendência (Destaque)
+                            fig_trend.add_trace(go.Scatter(x=vendas_dia['DATA_DT'], y=vendas_dia['MEDIA_MOVEL_7D'], 
+                                                           mode='lines+markers', name='Tendência (Média Móvel)', 
+                                                           line=dict(color=paleta_sweet[1], width=3)))
+                            
+                            fig_trend.update_layout(hovermode="x unified", margin=dict(t=10, b=10, l=0, r=0), 
+                                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                            st.plotly_chart(fig_trend, use_container_width=True)
+                        else:
+                            st.info("O sistema precisa de pelo menos 4 dias diferentes de vendas para calcular a tendência preditiva.")
+
                 else:
-                    st.info("Aguardando vendas de clientes reais para gerar os gráficos.")
+                    st.info("Aguardando vendas de clientes reais para gerar os gráficos de inteligência.")
 
         except Exception as e:
             st.error(f"⚠️ Erro ao processar o painel: {e}")
@@ -5081,6 +5160,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
