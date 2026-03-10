@@ -1178,38 +1178,83 @@ elif menu_selecionado == "💰 Financeiro":
             c_ia1, c_ia2 = st.columns([3, 1])
             c_ia1.write(f"Olá, **{st.session_state.get('usuario_logado', 'Gestor')}**! Quer que a Inteligência Artificial analise os números da **{NOME_LOJA}**?")
             
-            if c_ia2.button("🧠 Gerar Análise Executiva", type="primary", use_container_width=True):
-                with st.spinner("O CEO de Bolso está a analisar os seus dados..."):
+            # Usamos type="secondary" para o texto herdar a sua cor marrom escura elegante (COR_TEXTO)
+            if c_ia2.button("🧠 Gerar Análise Data-Driven", type="secondary", use_container_width=True):
+                with st.spinner("A processar algoritmos de análise e modelagem de dados..."):
                     try:
-                        # 1. PREPARAÇÃO DOS DADOS (CÉREBRO DO SaaS)
-                        total_vendas_qtd = len(df_vendas_hist) if not df_vendas_hist.empty else 0
-                        total_despesas = len(df_despesas) if not df_despesas.empty else 0
-                        
-                        produto_top = "Nenhum"
+                        # =======================================================
+                        # 1. HIGIENIZAÇÃO E PREPARAÇÃO DOS DADOS
+                        # =======================================================
                         if not df_vendas_hist.empty:
+                            col_cliente = 'CLIENTE' if 'CLIENTE' in df_vendas_hist.columns else df_vendas_hist.columns[3]
+                            df_vendas_limpo = df_vendas_hist[~df_vendas_hist[col_cliente].astype(str).str.upper().str.contains("TOTAIS", na=False)].copy()
+                            df_vendas_limpo = df_vendas_limpo[df_vendas_limpo[col_cliente].str.strip() != ""]
+                            
+                            total_vendas_qtd = len(df_vendas_limpo)
+                            
+                            col_total = 'TOTAL R$' if 'TOTAL R$' in df_vendas_limpo.columns else df_vendas_limpo.columns[11]
+                            faturamento_bruto = sum(limpar_v(val) for val in df_vendas_limpo[col_total])
+                            ticket_medio = (faturamento_bruto / total_vendas_qtd) if total_vendas_qtd > 0 else 0.0
+                            
                             try:
-                                col_prod_nome = 'PRODUTO' if 'PRODUTO' in df_vendas_hist.columns else df_vendas_hist.columns[5]
-                                produto_top = df_vendas_hist[col_prod_nome].value_counts().idxmax()
+                                col_prod_nome = 'PRODUTO' if 'PRODUTO' in df_vendas_limpo.columns else df_vendas_limpo.columns[5]
+                                col_prod_cod = 'CÓD. PRÓDUTO' if 'CÓD. PRÓDUTO' in df_vendas_limpo.columns else df_vendas_limpo.columns[4]
+                                
+                                # 💡 MÁGICA: Junta o Código e o Nome para análise precisa
+                                produtos_combinados = df_vendas_limpo[col_prod_cod].astype(str) + " - " + df_vendas_limpo[col_prod_nome].astype(str)
+                                produto_top = produtos_combinados.value_counts().idxmax()
+                                freq_top = produtos_combinados.value_counts().max()
                             except:
-                                produto_top = "Identificado no histórico"
+                                produto_top = "Indisponível"
+                                freq_top = 0
+                        else:
+                            total_vendas_qtd = 0
+                            faturamento_bruto = 0.0
+                            ticket_medio = 0.0
+                            produto_top = "Nenhum"
+                            freq_top = 0
 
-                        # 2. ENGENHARIA DE PROMPT (PERSONALIZADA)
+                        total_despesas = len(df_despesas) if not df_despesas.empty else 0
+
+                        # =======================================================
+                        # 2. ENGENHARIA DE PROMPT (MACHINE LEARNING & ESTRUTURA)
+                        # =======================================================
                         prompt_ceo = f"""
-                        Aja como um Diretor Financeiro (CFO) amigável da loja {NOME_LOJA}. 
-                        Analise os seguintes dados reais:
-                        - Total de Vendas registradas: {total_vendas_qtd}
-                        - Registos de Despesas/Saídas: {total_despesas}
-                        - Produto mais vendido: {produto_top}
+                        Atue como um Cientista de Dados e um Algoritmo de Machine Learning Preditivo analisando a 'Sweet Home Enxovais'.
                         
-                        Crie um resumo executivo de 2 parágrafos. 
-                        No primeiro, dê um panorama geral motivador. 
-                        No segundo, dê uma sugestão prática para aumentar o lucro.
-                        Use um tom profissional e acolhedor. Seja conciso.
+                        DADOS OFICIAIS PARA PROCESSAMENTO:
+                        - Volume Exato: {total_vendas_qtd} vendas.
+                        - Faturamento Bruto: R$ {faturamento_bruto:,.2f}
+                        - Ticket Médio: R$ {ticket_medio:,.2f}
+                        - Volume de Despesas Lançadas: {total_despesas} operações.
+                        - Top SKU (Produto Campeão): '{produto_top}' (Vendido {freq_top} vezes).
+
+                        REGRAS DE ENGENHARIA DO SISTEMA (CRÍTICO):
+                        1. PROIBIDO USAR O SÍMBOLO DE CIFRÃO ($): Para não causar o 'bug verde' de renderização LaTeX no sistema, nunca escreva o símbolo do dólar/cifrão. Escreva estritamente 'R$ ' (com espaço) ou 'Reais'.
+                        2. EXATIDÃO MATEMÁTICA: O número de vendas é exatamente {total_vendas_qtd}. Não aproxime.
+
+                        ESTRUTURA DE SAÍDA EXIGIDA (Siga os tópicos exatamente assim):
+                        
+                        > **Visão Global (Sumário)**
+                        [Parágrafo direto com diagnóstico da saúde do negócio].
+                        
+                        ### 📊 1. Arquitetura de Indicadores
+                        [Crie uma Tabela Markdown limpa com as métricas fornecidas].
+
+                        ### 🤖 2. Modelagem Preditiva e Clusterização Simulada
+                        [Aplique lógica de Machine Learning: baseado no ticket médio de R$ {ticket_medio:.2f} e no SKU '{produto_top}', defina 2 'Clusters' (perfis) prováveis de clientes que estão a comprar na loja e faça uma previsão sobre o comportamento futuro de recompra deles].
+
+                        ### ⚠️ 3. Lacunas de Dados (CAC e LTV)
+                        [Como Cientista de Dados, exija pragmaticamente a implementação do rastreio de Custo de Aquisição de Clientes (CAC) e Valor do Ciclo de Vida (LTV). Explique em 2 frases o risco de escalar cegamente sem estas duas métricas no sistema atual].
+
+                        ### 🎯 4. Execução Pragmática
+                        [Liste 3 ações curtas e táticas focadas em otimização de funil e aumento de LTV].
                         """
 
-                        # 3. MOTOR MULTI-IA (O Cérebro Alternativo Llama 3 via Groq)
+                        # =======================================================
+                        # 3. MOTOR DA IA (Llama 3.3)
+                        # =======================================================
                         import requests
-                        
                         if "GROQ_API_KEY" not in st.secrets:
                             st.error("⚠️ Chave 'GROQ_API_KEY' não encontrada nos Secrets!")
                             st.stop()
@@ -1217,45 +1262,40 @@ elif menu_selecionado == "💰 Financeiro":
                         chave_groq = st.secrets["GROQ_API_KEY"]
                         url_groq = "https://api.groq.com/openai/v1/chat/completions"
                         
-                        headers = {
-                            "Authorization": f"Bearer {chave_groq}",
-                            "Content-Type": "application/json"
-                        }
+                        headers = {"Authorization": f"Bearer {chave_groq}", "Content-Type": "application/json"}
                         
-                        # Usamos o modelo Llama mais atualizado da Groq
                         payload = {
-                            "model": "llama-3.3-70b-versatile", # 🚀 A MUDANÇA ESTÁ AQUI!
+                            "model": "llama-3.3-70b-versatile",
                             "messages": [
-                                {
-                                    "role": "system", 
-                                    "content": "Você é o Diretor Financeiro (CFO) da Sweet Home Enxovais. Responda sempre em Português, seja amigável, direto e extremamente analítico com os números fornecidos."
-                                },
-                                {
-                                    "role": "user", 
-                                    "content": prompt_ceo
-                                }
+                                {"role": "system", "content": "Você é um algoritmo pragmático focado em Data Science para negócios. Responde de forma ultraestruturada, usa tabelas, formatação limpa e NUNCA usa o símbolo de cifrão solto."},
+                                {"role": "user", "content": prompt_ceo}
                             ],
-                            "temperature": 0.3
+                            "temperature": 0.2
                         }
                         
                         try:
-                            resposta = requests.post(url_groq, headers=headers, json=payload, timeout=15)
+                            resposta = requests.post(url_groq, headers=headers, json=payload, timeout=20)
                             
                             if resposta.status_code == 200:
-                                dados_retorno = resposta.json()
-                                texto_final = dados_retorno['choices'][0]['message']['content']
-                                st.success("✅ Análise concluída com sucesso (Motor: Meta Llama 3 via Groq)!")
-                                st.info(texto_final)
+                                texto_final = resposta.json()['choices'][0]['message']['content']
+                                st.success("✅ Máquina de Decisão processada com sucesso!")
+                                
+                                # Renderização Visual Impecável
+                                with st.container(border=True):
+                                    st.markdown(texto_final, unsafe_allow_html=True)
+                                
+                                # 💡 AQUI ESTÁ A MÁGICA DA CÓPIA! Um botão nativo do sistema para copiar tudo perfeito.
+                                with st.expander("📋 Copiar Relatório (Texto Bruto)"):
+                                    st.caption("Clique no ícone no canto superior direito da caixa abaixo para copiar toda a formatação perfeitamente.")
+                                    st.code(texto_final, language="markdown")
+                                    
                             else:
-                                st.error("⚠️ O Cérebro Secundário encontrou um obstáculo.")
-                                with st.expander("🔍 Detalhes Técnicos"):
-                                    st.code(resposta.text)
+                                st.error("⚠️ O Motor Preditivo encontrou um obstáculo.")
                         except Exception as e_req:
-                            st.error(f"⚠️ Erro de conexão com o servidor da IA: {e_req}")
+                            st.error(f"⚠️ Erro de conexão: {e_req}")
 
-                    # 💡 AQUI ESTÁ A "TAMPA" QUE FALTAVA PARA NÃO DAR ERRO NO ST.DIVIDER()
                     except Exception as e_geral:
-                        st.error(f"⚠️ Erro ao processar os dados para a IA: {e_geral}")
+                        st.error(f"⚠️ Erro interno na preparação dos dados: {e_geral}")
     
     st.divider()
     
@@ -5041,6 +5081,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
