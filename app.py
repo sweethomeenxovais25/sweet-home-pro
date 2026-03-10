@@ -1208,50 +1208,51 @@ elif menu_selecionado == "💰 Financeiro":
                         Use um tom profissional e acolhedor. Seja conciso.
                         """
 
-                        # 3. MOTOR DE FALLBACK COM LISTA ATUALIZADA
+                        # 3. MOTOR MULTI-IA (O Cérebro Alternativo Llama 3 via Groq)
                         import requests
-                        if "GOOGLE_API_KEY" not in st.secrets:
-                            st.error("⚠️ Chave 'GOOGLE_API_KEY' não encontrada nos Secrets!")
+                        
+                        if "GROQ_API_KEY" not in st.secrets:
+                            st.error("⚠️ Chave 'GROQ_API_KEY' não encontrada nos Secrets!")
                             st.stop()
+                            
+                        chave_groq = st.secrets["GROQ_API_KEY"]
+                        url_groq = "https://api.groq.com/openai/v1/chat/completions"
                         
-                        chave_api = st.secrets["GOOGLE_API_KEY"]
+                        headers = {
+                            "Authorization": f"Bearer {chave_groq}",
+                            "Content-Type": "application/json"
+                        }
                         
-                        # 💡 A CORREÇÃO ESTÁ AQUI: "gemini-pro" alterado para "gemini-1.5-pro" (nome técnico V1)
-                        modelos_para_testar = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+                        # Usamos o modelo Llama 3 70B (Um dos mais avançados do mundo hoje)
+                        payload = {
+                            "model": "llama3-70b-8192",
+                            "messages": [
+                                {
+                                    "role": "system", 
+                                    "content": "Você é o Diretor Financeiro (CFO) da Sweet Home Enxovais. Responda sempre em Português, seja amigável, direto e extremamente analítico com os números fornecidos."
+                                },
+                                {
+                                    "role": "user", 
+                                    "content": prompt_ceo
+                                }
+                            ],
+                            "temperature": 0.3
+                        }
                         
-                        sucesso_ia = False
-                        ultimo_erro_tecnico = ""
-
-                        for modelo_nome in modelos_para_testar:
-                            try:
-                                # Usamos o endpoint v1 para maior estabilidade no SaaS
-                                url_google = f"https://generativelanguage.googleapis.com/v1/models/{modelo_nome}:generateContent?key={chave_api}"
-                                payload = {"contents": [{"parts": [{"text": prompt_ceo}]}]}
-                                
-                                resposta = requests.post(url_google, json=payload, timeout=12)
-                                
-                                if resposta.status_code == 200:
-                                    dados_retorno = resposta.json()
-                                    texto_final = dados_retorno['candidates'][0]['content']['parts'][0]['text']
-                                    st.success(f"✅ Análise concluída com sucesso (via {modelo_nome})!")
-                                    st.info(texto_final)
-                                    sucesso_ia = True
-                                    break # Sucesso! Interrompe o loop
-                                else:
-                                    # Guarda o erro para diagnóstico se nenhum funcionar
-                                    ultimo_erro_tecnico = f"Modelo {modelo_nome} retornou Erro {resposta.status_code}: {resposta.text}"
-                                    continue
-                            except Exception as e_req:
-                                ultimo_erro_tecnico = str(e_req)
-                                continue
-
-                        if not sucesso_ia:
-                            st.error("⚠️ O Google recusou a ligação ou a cota expirou.")
-                            with st.expander("🔍 Detalhes Técnicos para Suporte"):
-                                st.code(ultimo_erro_tecnico)
-
-                    except Exception as e_geral:
-                        st.error(f"⚠️ Erro ao processar os dados para a IA: {e_geral}")
+                        try:
+                            resposta = requests.post(url_groq, headers=headers, json=payload, timeout=15)
+                            
+                            if resposta.status_code == 200:
+                                dados_retorno = resposta.json()
+                                texto_final = dados_retorno['choices'][0]['message']['content']
+                                st.success("✅ Análise concluída com sucesso (Motor: Meta Llama 3 via Groq)!")
+                                st.info(texto_final)
+                            else:
+                                st.error("⚠️ O Cérebro Secundário encontrou um obstáculo.")
+                                with st.expander("🔍 Detalhes Técnicos"):
+                                    st.code(resposta.text)
+                        except Exception as e_req:
+                            st.error(f"⚠️ Erro de conexão com o servidor da IA: {e_req}")
     
     st.divider()
     
@@ -5037,5 +5038,6 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
