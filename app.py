@@ -1222,9 +1222,9 @@ elif menu_selecionado == "💰 Financeiro":
                             "Content-Type": "application/json"
                         }
                         
-                        # Usamos o modelo Llama 3 70B
+                        # Usamos o modelo Llama mais atualizado da Groq
                         payload = {
-                            "model": "llama3-70b-8192",
+                            "model": "llama-3.3-70b-versatile", # 🚀 A MUDANÇA ESTÁ AQUI!
                             "messages": [
                                 {
                                     "role": "system", 
@@ -5041,6 +5041,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
