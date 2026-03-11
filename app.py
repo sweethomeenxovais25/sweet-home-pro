@@ -80,29 +80,39 @@ def conectar_google():
 planilha_mestre = conectar_google()
 
 # ==========================================
-# 🎨 2. MOTOR WHITE-LABEL (LEITURA DINÂMICA)
+# 🎨 2. MOTOR WHITE-LABEL (LEITURA DINÂMICA BLINDADA)
 # ==========================================
-# 💡 Lógica otimizada: tenta ler do banco, se falhar, lê dos Secrets.
-try:
-    aba_config = planilha_mestre.worksheet("CONFIGURACOES")
-    dados_config = aba_config.get_all_values()
-    dicionario_config = {linha[0]: linha[1] for linha in dados_config if len(linha) > 1}
-    
-    NOME_LOJA = dicionario_config.get("NOME_LOJA", st.secrets["cliente"]["nome_loja"])
-    LOGO_URL = dicionario_config.get("LOGO_URL", st.secrets["cliente"]["logo_url"])
-    COR_PRIMARIA = dicionario_config.get("COR_PRIMARIA", st.secrets["tema"]["cor_primaria"])
-    COR_SECUNDARIA = dicionario_config.get("COR_SECUNDARIA", st.secrets["tema"]["cor_secundaria"])
-    COR_TEXTO = dicionario_config.get("COR_TEXTO", st.secrets["tema"]["cor_texto"])
-except Exception as e:
-    # Fallback seguro caso a aba CONFIGURACOES não exista ou dê erro
-    NOME_LOJA = st.secrets["cliente"]["nome_loja"]
-    LOGO_URL = st.secrets["cliente"]["logo_url"]
-    COR_PRIMARIA = st.secrets["tema"]["cor_primaria"]
-    COR_SECUNDARIA = st.secrets["tema"]["cor_secundaria"]
-    COR_TEXTO = st.secrets["tema"]["cor_texto"]
+# 💡 O truque do sublinhado (_planilha) avisa o Streamlit para não tentar criptografar a conexão do Google
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_identidade_visual(_planilha):
+    """Busca as cores no Google Sheets apenas 1 vez por hora (ou até o cache ser limpo)"""
+    try:
+        aba_config = _planilha.worksheet("CONFIGURACOES")
+        dados_config = aba_config.get_all_values()
+        dicionario_config = {linha[0]: linha[1] for linha in dados_config if len(linha) > 1}
+        
+        return (
+            dicionario_config.get("NOME_LOJA", st.secrets["cliente"]["nome_loja"]),
+            dicionario_config.get("LOGO_URL", st.secrets["cliente"]["logo_url"]),
+            dicionario_config.get("COR_PRIMARIA", st.secrets["tema"]["cor_primaria"]),
+            dicionario_config.get("COR_SECUNDARIA", st.secrets["tema"]["cor_secundaria"]),
+            dicionario_config.get("COR_TEXTO", st.secrets["tema"]["cor_texto"])
+        )
+    except Exception:
+        # Se a aba falhar na PRIMEIRA leitura, usa o cofre de segurança
+        return (
+            st.secrets["cliente"]["nome_loja"],
+            st.secrets["cliente"]["logo_url"],
+            st.secrets["tema"]["cor_primaria"],
+            st.secrets["tema"]["cor_secundaria"],
+            st.secrets["tema"]["cor_texto"]
+        )
+
+# Executa a função e desempacota as 5 variáveis de uma vez
+NOME_LOJA, LOGO_URL, COR_PRIMARIA, COR_SECUNDARIA, COR_TEXTO = carregar_identidade_visual(planilha_mestre)
 
 # ==========================================
-# 3. CONFIGURAÇÃO ÚNICA DA PÁGINA (Apenas 1 vez!)
+# 3. CONFIGURAÇÃO ÚNICA DA PÁGINA
 # ==========================================
 st.set_page_config(
     page_title=f"Gestão | {NOME_LOJA}", 
@@ -5127,6 +5137,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
