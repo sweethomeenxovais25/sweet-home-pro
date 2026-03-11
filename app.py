@@ -54,21 +54,55 @@ except Exception as e:
     print(f"Aviso de IA: {e}")
     pass
 
-# 2. MOTOR WHITE-LABEL (IDENTIDADE DINÂMICA E BANCO DE DADOS)
+# ==========================================
+# 🚀 1. LIGAÇÃO AO BANCO DE DADOS (CÉREBRO)
+# ==========================================
+ESPECIFICACOES = [
+    "https://spreadsheets.google.com/feeds", 
+    'https://www.googleapis.com/auth/spreadsheets',
+    "https://www.googleapis.com/auth/drive.file"
+]
+
+@st.cache_resource(show_spinner=False)
+def conectar_google():
+    try:
+        from oauth2client.service_account import ServiceAccountCredentials
+        import gspread
+        if "gcp_service_account" in st.secrets:
+            creds_info = st.secrets["gcp_service_account"]
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
+            return gspread.authorize(creds).open_by_key(st.secrets["cliente"]["spreadsheet_id"])
+        return None
+    except Exception as e:
+        st.error(f"Erro de ligação com a base de dados do cliente: {e}")
+        st.stop()
+
+planilha_mestre = conectar_google()
+
+# ==========================================
+# 🎨 2. MOTOR WHITE-LABEL (LEITURA DINÂMICA)
+# ==========================================
+# 💡 Lógica otimizada: tenta ler do banco, se falhar, lê dos Secrets.
 try:
+    aba_config = planilha_mestre.worksheet("CONFIGURACOES")
+    dados_config = aba_config.get_all_values()
+    dicionario_config = {linha[0]: linha[1] for linha in dados_config if len(linha) > 1}
+    
+    NOME_LOJA = dicionario_config.get("NOME_LOJA", st.secrets["cliente"]["nome_loja"])
+    LOGO_URL = dicionario_config.get("LOGO_URL", st.secrets["cliente"]["logo_url"])
+    COR_PRIMARIA = dicionario_config.get("COR_PRIMARIA", st.secrets["tema"]["cor_primaria"])
+    COR_SECUNDARIA = dicionario_config.get("COR_SECUNDARIA", st.secrets["tema"]["cor_secundaria"])
+    COR_TEXTO = dicionario_config.get("COR_TEXTO", st.secrets["tema"]["cor_texto"])
+except Exception as e:
+    # Fallback seguro caso a aba CONFIGURACOES não exista ou dê erro
     NOME_LOJA = st.secrets["cliente"]["nome_loja"]
     LOGO_URL = st.secrets["cliente"]["logo_url"]
-    ID_PLANILHA = st.secrets["cliente"]["spreadsheet_id"]
-    
     COR_PRIMARIA = st.secrets["tema"]["cor_primaria"]
     COR_SECUNDARIA = st.secrets["tema"]["cor_secundaria"]
     COR_TEXTO = st.secrets["tema"]["cor_texto"]
-except Exception as e:
-    st.error("⚠️ Falha ao ler as configurações do Cliente nos Secrets. Verifique o arquivo st.secrets.")
-    st.stop()
 
 # ==========================================
-# 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
+# 3. CONFIGURAÇÃO ÚNICA DA PÁGINA (Apenas 1 vez!)
 # ==========================================
 st.set_page_config(
     page_title=f"Gestão | {NOME_LOJA}", 
@@ -90,11 +124,12 @@ def limpar_v(v):
 
 def limpar_texto(texto):
     if not isinstance(texto, str): return ""
+    import unicodedata
     texto_sem_acento = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
     return texto_sem_acento.lower().strip()
 
 def buscar_cep_magico(cep):
-    """Vai à internet buscar os dados do endereço usando a API pública e gratuita do ViaCEP"""
+    import requests
     cep_limpo = str(cep).replace("-", "").replace(".", "").strip()
     if len(cep_limpo) == 8:
         try:
@@ -108,7 +143,7 @@ def buscar_cep_magico(cep):
     return None
 
 def buscar_cnpj_magico(cnpj):
-    """Consulta a API pública da ReceitaWS para buscar os dados de uma empresa pelo CNPJ"""
+    import requests
     cnpj_limpo = str(cnpj).replace(".", "").replace("-", "").replace("/", "").strip()
     if len(cnpj_limpo) == 14:
         try:
@@ -122,13 +157,12 @@ def buscar_cnpj_magico(cnpj):
     return None
 
 def gerar_hash_senha(senha):
-    """Transforma a senha em um código criptografado irreversível (SHA-256)"""
+    import hashlib
     return hashlib.sha256(str(senha).encode('utf-8')).hexdigest()
 
 # ==========================================
-# 🎨 1.5. IDENTIDADE VISUAL DINÂMICA (O CAMALEÃO)
+# 🎨 4. IDENTIDADE VISUAL DINÂMICA (INJETADA 1 VEZ)
 # ==========================================
-# Note que os códigos hexadecimais sumiram! Agora o CSS usa as variáveis (ex: {COR_PRIMARIA})
 estilo_dinamico = f"""
 <style>
     /* Tela Principal Branca com a Listra na cor Primária do Cliente */
@@ -170,92 +204,6 @@ estilo_dinamico = f"""
     button[kind="primary"] p, button[kind="primary"] span {{ color: #ffffff !important; }}
 
     /* Limpeza do cabeçalho e rodapé */
-    #MainMenu {{visibility: hidden;}}
-    footer {{visibility: hidden;}}
-    header {{background-color: transparent !important;}}
-</style>
-"""
-st.markdown(estilo_dinamico, unsafe_allow_html=True)
-
-# ==========================================
-# 🚀 2. LIGAÇÃO AO BANCO DE DADOS (CÉREBRO)
-# ==========================================
-ESPECIFICACOES = [
-    "https://spreadsheets.google.com/feeds", 
-    'https://www.googleapis.com/auth/spreadsheets',
-    "https://www.googleapis.com/auth/drive.file"
-]
-
-@st.cache_resource(show_spinner=False)
-def conectar_google():
-    try:
-        from oauth2client.service_account import ServiceAccountCredentials
-        import gspread
-        if "gcp_service_account" in st.secrets:
-            creds_info = st.secrets["gcp_service_account"]
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, ESPECIFICACOES)
-            return gspread.authorize(creds).open_by_key(st.secrets["cliente"]["spreadsheet_id"])
-        return None
-    except Exception as e:
-        st.error(f"Erro de ligação com a base de dados do cliente: {e}")
-        st.stop()
-
-planilha_mestre = conectar_google()
-
-# ==========================================
-# 🧠 2.5. MOTOR WHITE-LABEL (LEITURA DINÂMICA)
-# ==========================================
-try:
-    aba_config = planilha_mestre.worksheet("CONFIGURACOES")
-    dados_config = aba_config.get_all_values()
-    dicionario_config = {linha[0]: linha[1] for linha in dados_config if len(linha) > 1}
-    
-    NOME_LOJA = dicionario_config.get("NOME_LOJA", "Loja Universal")
-    LOGO_URL = dicionario_config.get("LOGO_URL", "https://cdn-icons-png.flaticon.com/512/3081/3081840.png")
-    
-    # AGORA AS CORES VÊM DO BANCO DE DADOS (E não mais do st.secrets!)
-    COR_PRIMARIA = dicionario_config.get("COR_PRIMARIA", "#0056b3")
-    COR_SECUNDARIA = dicionario_config.get("COR_SECUNDARIA", "#f0f8ff")
-    COR_TEXTO = dicionario_config.get("COR_TEXTO", "#1e1e1e")
-except Exception as e:
-    # Cores de segurança caso a planilha falhe
-    NOME_LOJA = "Loja Universal"
-    LOGO_URL = ""
-    COR_PRIMARIA = "#0056b3"
-    COR_SECUNDARIA = "#f0f8ff"
-    COR_TEXTO = "#1e1e1e"
-
-# ==========================================
-# 1. CONFIGURAÇÃO ÚNICA DA PÁGINA
-# ==========================================
-st.set_page_config(page_title=f"Gestão | {NOME_LOJA}", page_icon=LOGO_URL, layout="wide")
-
-if 'autenticado' not in st.session_state: st.session_state['autenticado'] = False
-if 'historico_sessao' not in st.session_state: st.session_state['historico_sessao'] = []
-if 'historico_estoque' not in st.session_state: st.session_state['historico_estoque'] = []
-if 'carrinho' not in st.session_state: st.session_state['carrinho'] = []    
-
-def limpar_v(v):
-    if pd.isna(v) or v == "": return 0.0
-    numero = pd.to_numeric(str(v).replace('R$', '').replace('.', '').replace(',', '.').strip(), errors='coerce') or 0.0
-    return round(numero, 2)
-
-def limpar_texto(texto):
-    if not isinstance(texto, str): return ""
-    import unicodedata
-    texto_sem_acento = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
-    return texto_sem_acento.lower().strip()
-
-estilo_dinamico = f"""
-<style>
-    [data-testid="stAppViewContainer"] {{ background-color: #ffffff !important; border-right: 12px solid {COR_PRIMARIA} !important; }}
-    [data-testid="stSidebar"] {{ background-color: {COR_SECUNDARIA} !important; border-right: 1px solid #e0e0e0 !important; }}
-    [data-testid="collapsedControl"] svg, [data-testid="collapsedControl"] path, [data-testid="stSidebar"] button svg, [data-testid="stSidebar"] button path {{ color: {COR_TEXTO} !important; fill: {COR_TEXTO} !important; stroke: {COR_TEXTO} !important; }}
-    .stMarkdown, p, span, label, div[data-testid="stMetricValue"] {{ color: {COR_TEXTO} !important; }}
-    h1, h2, h3, h4 {{ color: {COR_TEXTO} !important; }}
-    button[kind="primary"] {{ background-color: {COR_PRIMARIA} !important; color: #ffffff !important; font-weight: bold !important; border-radius: 6px !important; border: none !important; box-shadow: 2px 2px 8px rgba(0,0,0,0.1) !important; transition: all 0.2s ease-in-out !important; }}
-    button[kind="primary"]:hover {{ transform: scale(1.02); opacity: 0.9; }}
-    button[kind="primary"] p, button[kind="primary"] span {{ color: #ffffff !important; }}
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
     header {{background-color: transparent !important;}}
@@ -5179,6 +5127,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
