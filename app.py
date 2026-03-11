@@ -872,6 +872,7 @@ if menu_selecionado == "🛒 Vendas":
                             recibo_texto += f"✨ *Obrigado pela preferência!*"
 
                             st.success("✅ Venda registrada com sucesso!")
+                            st.balloons() # 🎈 MÁGICA VISUAL AQUI! A tela vai encher de balões
                             st.code(recibo_texto, language="text")
                             
                             # 1. Inteligência de Zap
@@ -5178,6 +5179,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                     import time
                     time.sleep(1)
                     st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+
 
 
 
