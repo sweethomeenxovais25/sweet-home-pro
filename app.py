@@ -4708,6 +4708,50 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
         st.info("Aguardando registro de vendas para calcular o termômetro.")
 
     # ==========================================
+    # 📊 RAIO-X DE TRANSIÇÃO (PF vs PJ) - FATURAMENTO GLOBAL
+    # ==========================================
+    st.divider()
+    st.write(f"### 📊 Raio-X de Formalização ({ano_selecionado})")
+    st.caption("Acompanhe o seu faturamento não-oficial (Pessoa Física) lado a lado com o oficial (MEI) para ter a visão global do lucro do seu negócio.")
+
+    if DATA_ABERTURA:
+        if not df_vendas_hist.empty:
+            # Puxa todas as vendas do ano selecionado (sem o filtro de corte do CNPJ)
+            vendas_totais_ano = df_termometro[
+                (df_termometro['DATA_DT'].dt.year == ano_selecionado) &
+                (~df_termometro['CÓD. CLIENTE'].str.upper().str.contains("TOTAIS", na=False)) &
+                (df_termometro.iloc[:, 22].astype(str).str.strip().str.lower() != "cancelado")
+            ].copy()
+
+            if not vendas_totais_ano.empty:
+                vendas_totais_ano['VALOR_BRUTO'] = vendas_totais_ano.iloc[:, 11].apply(limpar_v)
+                
+                # O Divisor de Águas (Matemática Temporal)
+                vendas_pf = vendas_totais_ano[vendas_totais_ano['DATA_DT'] < data_corte_cnpj]
+                vendas_pj = vendas_totais_ano[vendas_totais_ano['DATA_DT'] >= data_corte_cnpj]
+                
+                total_pf = vendas_pf['VALOR_BRUTO'].sum()
+                total_pj = vendas_pj['VALOR_BRUTO'].sum()
+                total_geral = total_pf + total_pj
+                
+                c_pf, c_pj, c_tg = st.columns(3)
+                c_pf.metric("👤 Faturamento Pessoa Física", f"R$ {total_pf:,.2f}", help="Vendas realizadas ANTES da data de abertura do CNPJ. Não entram na declaração do MEI.")
+                c_pj.metric("🏢 Faturamento Oficial (MEI)", f"R$ {total_pj:,.2f}", help="Vendas oficiais que contam para o limite da Receita Federal.")
+                c_tg.metric("💰 Faturamento Global Real", f"R$ {total_geral:,.2f}", delta="Visão 360º", help="A soma de tudo o que a loja vendeu no ano, independente do CNPJ.")
+                
+                if total_pf > 0 and total_pj > 0:
+                    percentual_pj = (total_pj / total_geral) * 100
+                    st.info(f"💡 **Análise Estratégica:** Neste ano, **{percentual_pj:.1f}%** do seu faturamento foi oficializado. Lembre-se: O dinheiro da Pessoa Física (R$ {total_pf:,.2f}) também é seu caixa real, apenas não consome o limite da sua declaração do DASN!")
+                elif total_pf > 0 and total_pj == 0:
+                    st.warning("⚠️ Todas as vendas deste ano ocorreram antes da abertura do CNPJ. Nenhuma venda oficializada.")
+                elif total_pf == 0 and total_pj > 0:
+                    st.success("✅ 100% do seu faturamento neste ano foi oficializado pelo CNPJ.")
+            else:
+                st.info(f"Nenhuma venda registrada no ano de {ano_selecionado}.")
+    else:
+        st.warning("⚠️ Cadastre o CNPJ na aba 'Painel de Administração' para ativar o Raio-X de Formalização.")
+
+    # ==========================================
     # 💸 GESTÃO MENSAL (GUIAS DAS) & RALOS FINANCEIROS
     # ==========================================
     st.divider()
