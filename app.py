@@ -5054,144 +5054,114 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             st.info("Nenhum lançamento contábil registrado ainda.")
 
     # ==========================================
-    # 🤖 CONTADOR DIGITAL E ESTRATEGISTA FISCAL (IA 3.0)
+    # 🤖 CONTADOR DIGITAL E ESTRATEGISTA FISCAL (IA 4.0 - ESTATÍSTICA APLICADA)
     # ==========================================
     st.divider()
     
     if "contador_mensagens" not in st.session_state:
         st.session_state["contador_mensagens"] = [
-            {"role": "assistant", "content": "Olá! Sou o seu **Contador Digital Especialista**. Estou treinado com a legislação tributária brasileira. Posso ajudá-lo a otimizar impostos, simular a transição de MEI para ME (Microempresa) e organizar o seu crescimento.\n\nComo posso ajudar a **Sweet Home** hoje?"}
+            {"role": "assistant", "content": "Olá! Sou o seu **Contador Digital Avançado**. Utilizo **estatística aplicada e projeções de cenário** cruzadas com a legislação tributária vigente (MEI, Simples Nacional, Trabalhista).\n\nComo posso projetar o crescimento da **Sweet Home** hoje?"}
         ]
 
     with st.expander("🤖 Consultoria Contábil Digital (Tire dúvidas e planeje o seu crescimento)", expanded=False):
         
-        caixa_chat_fiscal = st.container(height=450, border=False)
+        caixa_chat_fiscal = st.container(height=500, border=False)
         
         with caixa_chat_fiscal:
             for msg in st.session_state["contador_mensagens"]:
-                if msg["role"] == "assistant":
-                    # Design da bolha da IA (Esquerda, cor da marca)
-                    st.markdown(f"""
-                    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 15px; border-top-left-radius: 0px; border-left: 5px solid {COR_PRIMARIA}; margin-bottom: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 85%; float: left;'>
-                        <strong style='color: {COR_PRIMARIA}; font-size: 14px;'>🤖 Contador Digital:</strong><br>
-                        <div style='color: #333; margin-top: 5px;'>{msg['content']}</div>
-                    </div>
-                    <div style='clear: both;'></div>
-                    """, unsafe_allow_html=True)
-                else:
-                    # Design da bolha do Utilizador (Direita, verde WhatsApp)
-                    st.markdown(f"""
-                    <div style='background-color: #dcf8c6; padding: 15px; border-radius: 15px; border-top-right-radius: 0px; border-right: 5px solid #28a745; margin-bottom: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 85%; float: right; text-align: right;'>
-                        <strong style='color: #28a745; font-size: 14px;'>👤 Você:</strong><br>
-                        <div style='color: #333; margin-top: 5px;'>{msg['content']}</div>
-                    </div>
-                    <div style='clear: both;'></div>
-                    """, unsafe_allow_html=True)
+                # Usa os avatares nativos do Streamlit para manter as tabelas Markdown intactas
+                with st.chat_message(msg["role"], avatar="👨‍💼" if msg["role"] == "assistant" else "👤"):
+                    st.markdown(msg["content"], unsafe_allow_html=True)
         
-        if pergunta_fiscal := st.chat_input("Ex: Compensa migrar para ME no Anexo I? Como calculo o DASN?"):
+        if pergunta_fiscal := st.chat_input("Ex: Faça uma projeção estatística se eu estourar o MEI em 30%..."):
             st.session_state["contador_mensagens"].append({"role": "user", "content": pergunta_fiscal})
             
             with caixa_chat_fiscal:
-                st.markdown(f"""
-                <div style='background-color: #dcf8c6; padding: 15px; border-radius: 15px; border-top-right-radius: 0px; border-right: 5px solid #28a745; margin-bottom: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 85%; float: right; text-align: right;'>
-                    <strong style='color: #28a745; font-size: 14px;'>👤 Você:</strong><br>
-                    <div style='color: #333; margin-top: 5px;'>{pergunta_fiscal}</div>
-                </div>
-                <div style='clear: both;'></div>
-                """, unsafe_allow_html=True)
+                with st.chat_message("user", avatar="👤"):
+                    st.markdown(pergunta_fiscal)
 
             with caixa_chat_fiscal:
-                resposta_placeholder = st.empty()
-                resposta_placeholder.markdown("⏳ *O Auditor está a analisar a legislação vigente...*")
-                
-                try:
-                    import google.generativeai as genai
-                    import urllib.parse
-                    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+                with st.chat_message("assistant", avatar="👨‍💼"):
+                    resposta_placeholder = st.empty()
+                    resposta_placeholder.markdown("⏳ *A processar modelos estatísticos e legislação...*")
                     
-                    # 🧠 O CÉREBRO DO CONTADOR DIGITAL (PROMPT NASA LEVEL)
-                    prompt_contador = f"""
-                    Você atua como o Contador Digital Sênior (Ex-Auditor da Receita Federal) da 'Sweet Home Enxovais'.
-                    Sua missão é proteger a empresa de multas, economizar dinheiro com impostos e guiar o crescimento estrutural de MEI para ME.
-                    
-                    DIRETRIZES DE RESPOSTA ESTRATÉGICA E OBRIGATÓRIAS:
-                    1. ESTRUTURA VISUAL: Divida SEMPRE a sua resposta nestes 4 blocos com os respectivos emojis:
-                       🎯 **Diagnóstico Rápido:** (Resumo claro do que está a acontecer)
-                       🧮 **A Matemática (Impacto Financeiro):** (Cálculos práticos, prós e contras financeiros)
-                       ⚖️ **Embasamento Legal:** (Qual lei justifica isso, ex: LC 123/2006)
-                       🚀 **Plano de Ação Prático:** (Passo a passo do que fazer hoje)
-                    2. TOM E DESIGN: Use parágrafos curtos, listas com marcadores (bullet points) e linguagem acessível mas altamente profissional. Você é um estrategista focado no lucro e segurança da loja.
-                    """
-                    
-                    # Carrega o histórico para a IA ter memória da conversa
-                    historico_gemini = []
-                    for m in st.session_state["contador_mensagens"][-5:]:
-                        role = "model" if m["role"] == "assistant" else "user"
-                        historico_gemini.append({"role": role, "parts": [m["content"]]})
+                    try:
+                        import google.generativeai as genai
+                        import urllib.parse
+                        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
                         
-                    # Remove a pergunta atual do array histórico para enviar como a "mensagem nova"
-                    pergunta_atual = historico_gemini.pop()['parts'][0]
-
-                    modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
-                    sucesso_ia = False
-                    texto_final = ""
-                    
-                    for m in modelos:
-                        try:
-                            modelo = genai.GenerativeModel(m, system_instruction=prompt_contador)
-                            chat = modelo.start_chat(history=historico_gemini)
-                            resposta = chat.send_message(pergunta_atual)
+                        prompt_contador = f"""
+                        Você é o Contador Digital Sênior e Cientista de Dados da 'Sweet Home Enxovais'.
+                        
+                        DIRETRIZES DE INTELIGÊNCIA E FORMATO:
+                        1. ESTATÍSTICA APLICADA: Não dê respostas genéricas. Crie cenários matemáticos (Cenário A vs Cenário B), use projeções de probabilidade, impacto em fluxo de caixa e análise de risco (%). 
+                        2. VARIÁVEIS DINÂMICAS: Seja inteligente para deduzir variáveis. Se a usuária omitir dados numéricos, assuma estimativas lógicas do varejo brasileiro e demonstre a matemática de forma clara.
+                        3. USO DE TABELAS: Sempre que houver comparativo financeiro ou de impostos, USE OBRIGATORIAMENTE Tabelas Markdown formatadas de forma impecável.
+                        4. ESTRUTURA VISUAL: Use Emojis para guiar a leitura. Crie tópicos claros: 📊 Diagnóstico | 📈 Projeção Estatística | ⚖️ Base Legal | 🚀 Decisão Recomendada.
+                        5. MANTENHA-SE ESTRITAMENTE DENTRO DA LEI (LC 123/2006, etc), mas explique como um estrategista financeiro de alto nível.
+                        """
+                        
+                        # Transforma o histórico do Streamlit no formato nativo do Gemini
+                        historico_gemini = []
+                        for m in st.session_state["contador_mensagens"][-5:]:
+                            role = "model" if m["role"] == "assistant" else "user"
+                            historico_gemini.append({"role": role, "parts": [m["content"]]})
                             
-                            if resposta and resposta.text:
-                                # 🛡️ A CURA DO BUG VERDE: Escapa os cifrões para o Streamlit não achar que é equação LaTeX
-                                texto_final = resposta.text.replace("$", r"\$")
-                                
-                                # Converte asteriscos em tags HTML para manter o negrito nas caixas customizadas
-                                texto_formatado_html = texto_final.replace("**", "<b>").replace("\n", "<br>")
-                                
-                                # Renderização com o design elegante
-                                resposta_placeholder.markdown(f"""
-                                <div style='background-color: #f8f9fa; padding: 15px; border-radius: 15px; border-top-left-radius: 0px; border-left: 5px solid {COR_PRIMARIA}; margin-bottom: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); width: 85%; float: left;'>
-                                    <strong style='color: {COR_PRIMARIA}; font-size: 14px;'>🤖 Contador Digital:</strong><br>
-                                    <div style='color: #333; margin-top: 5px;'>{texto_formatado_html}</div>
-                                </div>
-                                <div style='clear: both;'></div>
-                                """, unsafe_allow_html=True)
-                                
-                                st.session_state["contador_mensagens"].append({"role": "assistant", "content": texto_final})
-                                sucesso_ia = True
-                                break
-                        except Exception as e:
-                            continue
-                            
-                    if not sucesso_ia:
-                        resposta_placeholder.error("⚠️ Ocorreu uma instabilidade na consulta à legislação. Tente novamente.")
-                    
-                    # 📲 BOTÕES DE EXPORTAÇÃO (Whatsapp e Documento)
-                    if sucesso_ia and texto_final:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        col_b1, col_b2 = st.columns(2)
-                        
-                        # 1. Botão de WhatsApp (Transforma o \$ de volta para $ normal no zap)
-                        texto_zap = texto_final.replace(r"\$", "$")
-                        msg_zap = urllib.parse.quote(f"🏢 *Parecer Contábil - Sweet Home*\n\n{texto_zap}")
-                        col_b1.link_button("📲 Enviar Parecer por WhatsApp", f"https://wa.me/?text={msg_zap}", use_container_width=True)
-                        
-                        # 2. Botão de Download do Documento
-                        cabecalho_doc = f"RELATÓRIO DE CONSULTORIA FISCAL\nSistema de Gestão Sweet Home\nData: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n{'='*50}\n\n"
-                        doc_completo = cabecalho_doc + texto_zap.replace("**", "") # Tira os asteriscos para o Bloco de Notas ficar limpo
-                        
-                        col_b2.download_button(
-                            label="📄 Descarregar Parecer (Documento)",
-                            data=doc_completo,
-                            file_name=f"Parecer_Contabil_SweetHome_{datetime.now().strftime('%Y%m%d')}.txt",
-                            mime="text/plain",
-                            use_container_width=True,
-                            type="secondary"
-                        )
+                        # Remove a pergunta atual do array histórico
+                        pergunta_atual = historico_gemini.pop()['parts'][0]
 
-                except Exception as e:
-                    resposta_placeholder.error(f"Erro no sistema fiscal: {e}")
+                        modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+                        sucesso_ia = False
+                        texto_final = ""
+                        
+                        for m in modelos:
+                            try:
+                                modelo = genai.GenerativeModel(m, system_instruction=prompt_contador)
+                                chat = modelo.start_chat(history=historico_gemini)
+                                resposta = chat.send_message(pergunta_atual)
+                                
+                                if resposta and resposta.text:
+                                    # 🛡️ A SOLUÇÃO DEFINITIVA DO BUG VERDE (Matemática Streamlit)
+                                    # Substitui o cifrão literal pela entidade HTML que o navegador lê, mas o Streamlit ignora!
+                                    texto_final = resposta.text.replace("$", "&#36;")
+                                    
+                                    resposta_placeholder.markdown(texto_final, unsafe_allow_html=True)
+                                    st.session_state["contador_mensagens"].append({"role": "assistant", "content": texto_final})
+                                    sucesso_ia = True
+                                    break
+                            except Exception as e:
+                                continue
+                                
+                        if not sucesso_ia:
+                            resposta_placeholder.error("⚠️ Ocorreu uma instabilidade na consulta à legislação. Tente novamente.")
+                        
+                        # 📲 BOTÕES DE EXPORTAÇÃO (WHATSAPP E DOCUMENTO OFICIAL)
+                        if sucesso_ia and texto_final:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            col_b1, col_b2 = st.columns(2)
+                            
+                            # Reverte o código HTML para o símbolo original apenas na exportação
+                            texto_limpo_exportacao = texto_final.replace("&#36;", "$")
+                            
+                            # 1. Exportação para WhatsApp
+                            msg_zap = urllib.parse.quote(f"🏢 *Parecer Contábil Estratégico - Sweet Home*\n\n{texto_limpo_exportacao}")
+                            col_b1.link_button("📲 Enviar Parecer por WhatsApp", f"https://wa.me/?text={msg_zap}", use_container_width=True)
+                            
+                            # 2. Exportação para Documento (TXT que abre em qualquer lugar)
+                            cabecalho_doc = f"RELATÓRIO DE INTELIGÊNCIA FISCAL E ESTATÍSTICA\nSistema Baply | Sweet Home\nData: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n{'='*50}\n\n"
+                            doc_completo = cabecalho_doc + texto_limpo_exportacao.replace("**", "") # Remove asteriscos do markdown para o bloco de notas
+                            
+                            col_b2.download_button(
+                                label="📄 Descarregar Relatório (Documento)",
+                                data=doc_completo,
+                                file_name=f"Parecer_Contabil_SweetHome_{datetime.now().strftime('%Y%m%d')}.txt",
+                                mime="text/plain",
+                                use_container_width=True,
+                                type="secondary"
+                            )
+
+                    except Exception as e:
+                        resposta_placeholder.error(f"Erro no sistema fiscal: {e}")
                         
 # ==========================================================
 # ⚙️ SEÇÃO 9: PAINEL DE ADMINISTRAÇÃO (CÂMARA SECRETA)
