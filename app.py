@@ -4421,9 +4421,16 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
         
         vendas_ano_foco = df_termometro[df_termometro['DATA_DT'].dt.year == ano_selecionado]
         
+        # 💡 O FILTRO TEMPORAL INTELIGENTE (Ignora vendas de Pessoa Física antes do CNPJ)
+        data_corte_cnpj = pd.to_datetime("1900-01-01") # Padrão seguro
+        if DATA_ABERTURA:
+            try: data_corte_cnpj = pd.to_datetime(DATA_ABERTURA, format="%d/%m/%Y")
+            except: pass
+
         vendas_validas = vendas_ano_foco[
             (~vendas_ano_foco['CÓD. CLIENTE'].str.upper().str.contains("TOTAIS", na=False)) &
-            (vendas_ano_foco.iloc[:, 22].astype(str).str.strip().str.lower() != "cancelado")
+            (vendas_ano_foco.iloc[:, 22].astype(str).str.strip().str.lower() != "cancelado") &
+            (vendas_ano_foco['DATA_DT'] >= data_corte_cnpj) # 🛡️ Só soma o que foi vendido DEPOIS da empresa abrir
         ].copy()
 
         vendas_validas['VALOR_BRUTO'] = vendas_validas.iloc[:, 11].apply(limpar_v) 
