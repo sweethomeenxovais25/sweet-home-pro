@@ -4520,28 +4520,121 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
         with st.expander(f"📝 Gerar e Comprovar Declaração Anual (DASN-SIMEI referente a {ano_declaracao})", expanded=False):
             st.info(f"O Governo exige que você declare até 31 de maio de {ano_selecionado} tudo o que foi faturado em **{ano_declaracao}**.")
             
+            # 1. Busca as vendas do ano passado
             vendas_ano_anterior = df_termometro[df_termometro['DATA_DT'].dt.year == ano_declaracao].copy()
             vendas_ano_anterior['VALOR_BRUTO'] = vendas_ano_anterior.iloc[:, 11].apply(limpar_v)
             faturamento_passado = vendas_ano_anterior['VALOR_BRUTO'].sum()
             
-            c_dasn1, c_dasn2 = st.columns([1, 1.5])
+            # 2. Calcula o limite proporcional do ano passado
+            limite_passado = 81000.00
+            limite_extra_passado = 97200.00
+            
+            if DATA_ABERTURA:
+                try:
+                    data_abertura_obj = datetime.strptime(DATA_ABERTURA, "%d/%m/%Y").date()
+                    ano_ab_passado = data_abertura_obj.year
+                    mes_ab_passado = data_abertura_obj.month
+                    
+                    if ano_declaracao < ano_ab_passado:
+                        limite_passado = 0.0
+                        limite_extra_passado = 0.0
+                    elif ano_declaracao == ano_ab_passado:
+                        meses_ativos_passado = 12 - mes_ab_passado + 1
+                        limite_passado = meses_ativos_passado * 6750.00
+                        limite_extra_passado = limite_passado * 1.20
+                except: pass
+            
+            excesso = faturamento_passado - limite_passado if faturamento_passado > limite_passado else 0.0
+            
+            # Formatação BR
+            fat_passado_br = f"R$ {faturamento_passado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            lim_passado_br = f"R$ {limite_passado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            excesso_br = f"R$ {excesso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+            st.markdown("### 📊 Simulador Oficial DASN-SIMEI")
+            
+            # --- ESPELHO DA RECEITA FEDERAL (HTML) ---
+            cor_alerta = "#ff4b4b" if excesso > 0 else "#28a745"
+            layout_receita = f"""
+            <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; background-color: #fafafa;">
+                <h4 style="margin-top: 0; color: #333; font-size: 16px;">Apuração do Excesso de Receita (Ano Calendário: {ano_declaracao})</h4>
+                <table style="width: 100%; border-collapse: collapse; font-family: monospace; font-size: 14px;">
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; color: #555;">Receita Bruta anual:</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #333;">{fat_passado_br} (+)</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; color: #555;">Limite legal no ano:</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #333;">{lim_passado_br} (-)</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #555;">Valor acima do limite:</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: {cor_alerta};">{excesso_br} (=)</td>
+                    </tr>
+                </table>
+            </div>
+            """
+            st.markdown(layout_receita, unsafe_allow_html=True)
+            
+            if excesso > 0:
+                st.error(f"🚨 **Atenção:** A receita bruta total ultrapassou o limite permitido. Transmita a DASN-Simei e comunique o desenquadramento obrigatório. Lei Complementar 123/2006, art. 18-A, § 7º.")
+            else:
+                st.success("✅ **Tudo OK!** A sua empresa faturou dentro do limite permitido no ano anterior. Nenhuma multa por excesso será gerada.")
+            
+            # --- VALORES APURADOS (BUSCA NA ABA CONTABILIDADE) ---
+            st.write("#### 📑 Conferência de Guias Pagas (Valores Apurados)")
+            st.caption(f"Estes são os impostos mensais do ano {ano_declaracao} que já constam no banco de dados da empresa:")
+            
+            if not df_cont.empty:
+                df_cont['TIPO_LIMPO'] = df_cont['TIPO_GUIA'].astype(str).str.strip()
+                df_cont['COMP_LIMPA'] = df_cont['COMPETENCIA'].astype(str).str.strip()
+                guias_passado = df_cont[
+                    (df_cont['TIPO_LIMPO'] == "DAS MEI (Mensal)") & 
+                    (df_cont['COMP_LIMPA'].str.contains(str(ano_declaracao), na=False)) &
+                    (df_cont['STATUS'].astype(str).str.strip().str.upper() == "PAGO")
+                ].copy()
+                
+                if not guias_passado.empty:
+                    # Organizar a tabela bonitinha
+                    st.dataframe(
+                        guias_passado[['COMPETENCIA', 'DATA_PAGAMENTO', 'VALOR_PAGO', 'PREJUIZO_JUROS']],
+                        column_config={
+                            "COMPETENCIA": "Mês", 
+                            "DATA_PAGAMENTO": "Data do Pagamento",
+                            "VALOR_PAGO": "Valor Pago",
+                            "PREJUIZO_JUROS": "Juros embutidos"
+                        },
+                        use_container_width=True, hide_index=True
+                    )
+                else:
+                    st.info(f"Nenhuma guia do ano de {ano_declaracao} foi registrada como paga no sistema.")
+            else:
+                st.info("Aba contábil vazia.")
+
+            # --- FECHAMENTO E UPLOAD ---
+            st.divider()
+            c_dasn1, c_dasn2 = st.columns([1, 1])
             with c_dasn1:
-                st.markdown(f"##### Valor Exato para declarar:\n### **R$ {faturamento_passado:,.2f}**")
-                st.link_button("🌐 Acessar Portal da Receita Federal", "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Default.aspx", type="primary")
+                st.write("**Pronto para declarar?**")
+                st.write("Use os valores do painel acima para preencher o site oficial sem medo de errar.")
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.link_button("🌐 Acessar Portal da Receita Federal", "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Default.aspx", type="primary", use_container_width=True)
             
             with c_dasn2:
-                st.markdown("##### 🔒 Anexar Comprovante de Entrega")
                 with st.form("form_dasn", clear_on_submit=True):
-                    dasn_arquivo = st.file_uploader("Recibo DASN (PDF/Foto)", type=['pdf', 'png', 'jpg'])
-                    if st.form_submit_button("Salvar Recibo DASN", type="secondary"):
+                    st.markdown("**🔒 Anexar Comprovante Final**")
+                    dasn_arquivo = st.file_uploader("Recibo DASN Entregue (PDF)", type=['pdf', 'png', 'jpg'])
+                    if st.form_submit_button("Guardar Recibo no Cofre", type="secondary", use_container_width=True):
                         if dasn_arquivo:
-                            with st.spinner("Salvando..."):
+                            with st.spinner("A guardar documento na nuvem..."):
                                 nome_doc = f"DASN_SIMEI_{ano_declaracao}_entregue_em_{ano_selecionado}"
                                 id_cloud, link_cloud = upload_para_cloudinary(dasn_arquivo.getvalue(), nome_doc, "Contabilidade")
                                 if link_cloud:
                                     try:
-                                        data_agora = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
-                                        # Formato Novo: TIPO | COMP | VENC | V_BASE | V_PAGO | PREJ | ATRASO | STATUS | DATA | LINK
+                                        import pytz
+                                        fuso = pytz.timezone('America/Sao_Paulo')
+                                        data_agora = datetime.now(fuso).strftime("%d/%m/%Y")
+                                        aba_contabilidade = planilha_mestre.worksheet("CONTABILIDADE")
                                         aba_contabilidade.append_row(["DASN (Declaração Anual)", f"Ano-Calendário {ano_declaracao}", "31/05", 0.00, 0.00, 0.00, 0, "ENTREGUE", data_agora, link_cloud], value_input_option='USER_ENTERED')
                                         st.success(f"✅ Declaração salva com sucesso!"); st.cache_data.clear(); st.rerun()
                                     except Exception as e: st.error(f"Erro: {e}")
@@ -4717,6 +4810,26 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             df_guias_view = df_cont[df_cont['TIPO_GUIA'] == "DAS MEI (Mensal)"].copy().iloc[::-1]
             
             if not df_guias_view.empty:
+                # 💡 FILTRO INTELIGENTE E ESCALÁVEL
+                # Extrai os anos únicos das competências (ex: "05/2025" -> "2025")
+                anos_registrados = sorted(list(set([str(comp).split('/')[-1].strip() for comp in df_guias_view['COMPETENCIA'] if '/' in str(comp)])), reverse=True)
+                
+                filtro_ano = st.selectbox("Filtrar por Ano:", ["Todos os Anos"] + anos_registrados)
+                
+                if filtro_ano != "Todos os Anos":
+                    df_guias_view = df_guias_view[df_guias_view['COMPETENCIA'].str.contains(filtro_ano, na=False)]
+                
+                # 💡 MICRO-MÉTRICAS DE AUDITORIA
+                t_pago_filtro = df_guias_view['VALOR_PAGO'].sum()
+                t_multa_filtro = df_guias_view['PREJUIZO_JUROS'].sum()
+                
+                st.markdown(f"""
+                <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid {COR_PRIMARIA};">
+                    <small style="color: #666;">Resumo da Seleção:</small><br>
+                    <b>Total Pago:</b> R$ {t_pago_filtro:,.2f} &nbsp;|&nbsp; <b>Total em Multas:</b> R$ {t_multa_filtro:,.2f}
+                </div>
+                """, unsafe_allow_html=True)
+
                 st.dataframe(
                     df_guias_view[['COMPETENCIA', 'DATA_PAGAMENTO', 'VALOR_PAGO', 'PREJUIZO_JUROS', 'LINK_COMPROVANTE']],
                     column_config={
@@ -4729,9 +4842,9 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                     use_container_width=True, hide_index=True
                 )
             else:
-                st.info("Nenhuma guia paga registrada.")
+                st.info("Nenhuma guia paga registrada para este filtro.")
         else:
-            st.info("Nenhuma guia paga registrada.")
+            st.info("Nenhuma guia paga registrada no sistema.")
 
     # ==========================================
     # ✏️ BORRACHA MÁGICA: CONTABILIDADE E IMPOSTOS
@@ -4927,60 +5040,86 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             st.info("Nenhum lançamento contábil registrado ainda.")
 
     # ==========================================
-    # 🤖 ASSISTENTE FISCAL MEI (CHATBOT GOV.BR)
+    # 🤖 CONTADOR DIGITAL E ESTRATEGISTA FISCAL (IA)
     # ==========================================
     st.divider()
     
-    if 'resposta_mei_ia' not in st.session_state:
-        st.session_state['resposta_mei_ia'] = ""
+    if "contador_mensagens" not in st.session_state:
+        st.session_state["contador_mensagens"] = [
+            {"role": "assistant", "content": "Olá! Sou o seu **Contador Digital**. Estou treinado com a legislação tributária brasileira (Leis Complementares 123/2006, 188/2021). Posso ajudá-lo a otimizar impostos, simular a transição de MEI para ME (Simples Nacional) e organizar a sua contabilidade. Qual é o seu cenário atual?"}
+        ]
 
-    with st.expander("🤖 Assistente Fiscal do MEI (Tire suas dúvidas legais)", expanded=False):
-        st.markdown("Tem dúvidas sobre licença-maternidade, limite de compras, INSS, juros de atraso ou contratação de funcionário? **Pergunte ao nosso especialista treinado com as regras do portal Gov.br.**")
+    with st.expander("🤖 Consultoria Contábil Digital (Tire dúvidas e planeje o seu crescimento)", expanded=False):
         
-        pergunta_mei = st.text_area("O que você precisa saber sobre o MEI?", placeholder="Ex: Qual o juros se eu atrasar a guia DAS? Posso ter filial?")
+        caixa_chat_fiscal = st.container(height=350, border=False)
         
-        if st.button("Consultar Legislação 🔎"):
-            if pergunta_mei:
-                with st.spinner("Consultando base de dados do Simples Nacional..."):
+        with caixa_chat_fiscal:
+            for msg in st.session_state["contador_mensagens"]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+        
+        if pergunta_fiscal := st.chat_input("Ex: Compensa migrar para ME no Anexo I? Como calculo o DASN?"):
+            st.session_state["contador_mensagens"].append({"role": "user", "content": pergunta_fiscal})
+            
+            with caixa_chat_fiscal:
+                with st.chat_message("user"):
+                    st.markdown(pergunta_fiscal)
+
+            with caixa_chat_fiscal:
+                with st.chat_message("assistant"):
+                    resposta_placeholder = st.empty()
+                    resposta_placeholder.markdown("⏳ *A analisar a legislação vigente...*")
+                    
                     try:
                         import google.generativeai as genai
                         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
                         
-                        prompt_fiscal = f"""
-                        Você é um Consultor Fiscal Sênior especialista em MEI (Microempreendedor Individual) no Brasil, treinado com os dados oficiais do portal Gov.br (PGMEI) e Sebrae.
-                        A usuária Bia, dona da loja de enxovais Sweet Home, está te fazendo a seguinte pergunta:
+                        # 🧠 O CÉREBRO DO CONTADOR DIGITAL
+                        prompt_contador = f"""
+                        Você atua como o Contador Digital Chefe da 'Sweet Home Enxovais'.
+                        A sua missão é proteger a empresa de multas, economizar dinheiro com impostos e guiar o crescimento estrutural de MEI para ME (Microempresa).
                         
-                        "{pergunta_mei}"
-                        
-                        REGRAS PARA A RESPOSTA:
-                        1. Seja direto, didático e empático. Evite juridiquês complicado.
-                        2. Baseie sua resposta APENAS na lei vigente do MEI no Brasil.
-                        3. Se perguntarem sobre multas de atraso do DAS, informe EXATAMENTE a regra: Multa de 0,33% ao dia (limitada a 20%) + Juros da taxa Selic + 1% no mês do pagamento.
-                        4. Se perguntarem sobre compras, o limite é de 80% da receita bruta.
-                        5. Formate a resposta usando Markdown (negritos e tópicos) para fácil leitura.
+                        DIRETRIZES DE RESPOSTA:
+                        1. ATUAÇÃO: Você não é apenas um "leitor de regras". Você é um estrategista de negócios. Mostre os Prós e Contras financeiros (Ex: "Se você faturar X, vale a pena ir para o Simples Nacional Anexo I porque a alíquota inicial é de 4%").
+                        2. ABRANGÊNCIA: Domine regras do MEI, Simples Nacional, contratação de funcionários (CLT), licenças e emissão de NFe.
+                        3. LEGALIDADE: Quando necessário, cite as bases legais (Ex: LC 123/2006) para transmitir autoridade e confiança.
+                        4. TOM: Profissional, consultivo, direto e altamente focado na economia de recursos da empresa. Evite respostas genéricas de "consulte um contador", pois VOCÊ é o contador digital primário.
+                        5. FORMATAÇÃO: Use negritos, listas e tabelas (se houver comparativos numéricos) para deixar a leitura impecável.
                         """
                         
+                        # Transforma o histórico do Streamlit no formato nativo do Gemini para chat
+                        historico_gemini = []
+                        for m in st.session_state["contador_mensagens"][-5:]: # Mantém contexto das últimas 5 mensagens
+                            role = "model" if m["role"] == "assistant" else "user"
+                            historico_gemini.append({"role": role, "parts": [m["content"]]})
+                            
+                        # Remove a última mensagem (a pergunta atual) para não duplicar
+                        pergunta_atual = historico_gemini.pop()['parts'][0]
+
                         modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+                        sucesso_ia = False
+                        
                         for m in modelos:
                             try:
-                                modelo = genai.GenerativeModel(m)
-                                resposta = modelo.generate_content(prompt_fiscal)
-                                if resposta:
-                                    st.session_state['resposta_mei_ia'] = resposta.text
+                                modelo = genai.GenerativeModel(m, system_instruction=prompt_contador)
+                                chat = modelo.start_chat(history=historico_gemini)
+                                resposta = chat.send_message(pergunta_atual)
+                                
+                                if resposta and resposta.text:
+                                    texto_final = resposta.text
+                                    resposta_placeholder.markdown(texto_final)
+                                    st.session_state["contador_mensagens"].append({"role": "assistant", "content": texto_final})
+                                    sucesso_ia = True
                                     break
-                            except: continue
-                    except Exception as e:
-                        st.error(f"Erro na IA: {e}")
-            else:
-                st.warning("Digite uma pergunta antes de consultar.")
-                
-        if st.session_state['resposta_mei_ia']:
-            st.info("💡 **Resposta Oficial do Assistente:**")
-            st.markdown(st.session_state['resposta_mei_ia'])
-            if st.button("Limpar Resposta"):
-                st.session_state['resposta_mei_ia'] = ""
-                st.rerun()
+                            except Exception as e:
+                                continue # Tenta o próximo modelo
+                                
+                        if not sucesso_ia:
+                            resposta_placeholder.error("⚠️ Ocorreu uma instabilidade na consulta à legislação. Tente novamente.")
 
+                    except Exception as e:
+                        resposta_placeholder.error(f"Erro no sistema fiscal: {e}")
+                        
 # ==========================================================
 # ⚙️ SEÇÃO 9: PAINEL DE ADMINISTRAÇÃO (CÂMARA SECRETA)
 # ==========================================================
