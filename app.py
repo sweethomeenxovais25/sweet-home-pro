@@ -5033,7 +5033,7 @@ elif menu_selecionado == "⚙️ Painel de Administração":
     # ABA 2: PERSONALIZAÇÃO DA MARCA E CORES INTELIGENTES
     # -----------------------------------------------------
     with tab_marca:
-        # Função Ninja para salvar/atualizar chaves na planilha (se já não estiver declarada)
+        # Função Ninja para salvar/atualizar chaves na planilha sem dar erro
         def atualizar_config(chave, valor):
             aba_conf = planilha_mestre.worksheet("CONFIGURACOES")
             try:
@@ -5042,7 +5042,9 @@ elif menu_selecionado == "⚙️ Painel de Administração":
             except:
                 aba_conf.append_row([chave, valor])
 
-        # 🏛️ PARTE 0: DADOS FISCAIS E CNPJ
+        # ====================================================================
+        # 🏛️ INÍCIO DO NOVO BLOCO: DADOS FISCAIS E CNPJ
+        # ====================================================================
         st.write("### 🏛️ Dados Fiscais (Para Cálculo MEI)")
         with st.form("form_dados_fiscais"):
             st.info("Digite o CNPJ para o sistema calcular o teto proporcional do seu imposto no ano de abertura.")
