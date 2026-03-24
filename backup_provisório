@@ -3,7 +3,6 @@
 
 
 
-
 import streamlit as st
 import pandas as pd
 import gspread
@@ -314,11 +313,14 @@ def upload_para_cloudinary(file_bytes, file_name, pasta_destino):
         # Cria as pastas virtuais automaticamente no CDN
         caminho_pasta = f"SweetHome/{pasta_destino}"
         
+        # 💡 A CURA DO BUG DO PDF: Se o nome tiver .pdf, obriga o Cloudinary a aceitar como documento 'raw'
+        tipo_recurso = "raw" if file_name.lower().endswith(".pdf") else "auto"
+        
         resposta = cloudinary.uploader.upload(
             file_bytes,
             folder=caminho_pasta,
             public_id=file_name,
-            resource_type="auto"
+            resource_type=tipo_recurso
         )
         # Retorna o ID único e o link direto
         return resposta.get('public_id'), resposta.get('secure_url')
@@ -3290,10 +3292,15 @@ elif menu_selecionado == "📂 Documentos":
                     vinculo_final = "-"
                 
                 nome_limpo = nome_gerado.replace("/", "-").replace(":", "")
+                
+                # 💡 Extrai a extensão original (.pdf, .jpg) e cola no nome limpo
+                import os
+                extensao = os.path.splitext(arquivo_subido.name)[1].lower()
+                nome_limpo_com_ext = f"{nome_limpo}{extensao}"
 
                 with st.spinner(f"Subindo para o servidor seguro... ⏳"):
-                    # 1. Tenta fazer o upload para o Cloudinary
-                    f_id, f_link = upload_para_cloudinary(arquivo_subido.getvalue(), nome_limpo, cat_escolhida)
+                    # 1. Tenta fazer o upload para o Cloudinary (agora com a extensão correta)
+                    f_id, f_link = upload_para_cloudinary(arquivo_subido.getvalue(), nome_limpo_com_ext, cat_escolhida)
                     
                     # 2. Só grava na planilha SE o upload realmente funcionou
                     if f_id:
@@ -4647,7 +4654,10 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                         if st.form_submit_button("Guardar Recibo no Cofre", type="secondary", use_container_width=True):
                             if dasn_arquivo:
                                 with st.spinner("A guardar documento na nuvem..."):
-                                    nome_doc = f"DASN_SIMEI_{ano_declaracao}_entregue_em_{ano_selecionado}"
+                                    import os
+                                    ext_dasn = os.path.splitext(dasn_arquivo.name)[1].lower()
+                                    nome_doc = f"DASN_SIMEI_{ano_declaracao}_entregue_em_{ano_selecionado}{ext_dasn}"
+                                    
                                     id_cloud, link_cloud = upload_para_cloudinary(dasn_arquivo.getvalue(), nome_doc, "Contabilidade")
                                     if link_cloud:
                                         try:
@@ -4808,7 +4818,11 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                         dias_atraso = diferenca_dias if diferenca_dias > 0 else 0
                         prejuizo_juros = valor_pago - valor_base if valor_pago > valor_base else 0.0
                         
-                        nome_doc = f"DAS_{comp_mes}_{ano_selecionado}_Atraso{dias_atraso}d"
+                        # 💡 Adiciona a extensão ao nome da guia
+                        import os
+                        ext_das = os.path.splitext(comp_arquivo.name)[1].lower()
+                        nome_doc = f"DAS_{comp_mes}_{ano_selecionado}_Atraso{dias_atraso}d{ext_das}"
+                        
                         id_cloud, link_cloud = upload_para_cloudinary(comp_arquivo.getvalue(), nome_doc, "Contabilidade")
                         
                         if link_cloud:
