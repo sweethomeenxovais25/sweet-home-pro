@@ -4453,18 +4453,38 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
 
         percentual_atingido = (faturamento_atual / limite_mei) * 100 if limite_mei > 0 else 0
 
-        # 🚥 ANÁLISE DE RISCO FISCAL
+        # 🇧🇷 Formatadores para o padrão Brasileiro (Ex: R$ 38.047,07)
+        fat_br = f"R$ {faturamento_atual:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        lim_br = f"R$ {limite_mei:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        ext_br = f"R$ {limite_extrapolacao:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        # 🚥 ANÁLISE DE RISCO FISCAL (COM DESIGN HTML ENTERPRISE)
         if limite_mei == 0:
-            cor_termo = "#e0e0e0"; status_termo = "⚪ **Inativo:** A empresa não estava aberta neste ano."
+            cor_termo = "#a0a0a0"
+            icone = "⚪"
+            titulo_status = "Inativo"
+            texto_status = "A empresa não estava aberta neste ano fiscal."
             percentual_atingido = 0
         elif faturamento_atual <= limite_mei * 0.80:
-            cor_termo = "#28a745"; status_termo = "🟢 **Zona Segura:** Faturamento excelente e dentro da margem legal."
+            cor_termo = "#28a745"
+            icone = "🟢"
+            titulo_status = "Zona Segura"
+            texto_status = "Faturamento excelente e dentro da margem legal do MEI."
         elif faturamento_atual <= limite_mei:
-            cor_termo = "#ffa500"; status_termo = "🟡 **Alerta Amarelo:** Aproximando-se do teto legal do MEI. Monitore as vendas de perto."
+            cor_termo = "#ffa500"
+            icone = "🟡"
+            titulo_status = "Alerta Amarelo"
+            texto_status = "Aproximando-se do teto legal do MEI. Monitore as vendas de perto."
         elif faturamento_atual <= limite_extrapolacao:
-            cor_termo = "#fd7e14"; status_termo = f"🟠 **Estouro Tolerável (Até 20%):** Faturou R$ {faturamento_atual:,.2f}. Passou do teto de R$ {limite_mei:,.2f}, mas ficou abaixo dos 20%. Será desenquadrada no próximo ano, mas paga apenas a multa no DASN."
+            cor_termo = "#fd7e14"
+            icone = "🟠"
+            titulo_status = "Estouro Tolerável (Até 20%)"
+            texto_status = f"Faturou <b>{fat_br}</b>. Passou do teto de <b>{lim_br}</b>, mas ficou abaixo dos 20% de tolerância. A empresa será desenquadrada no próximo ano, mas pagará apenas a multa no DASN."
         else:
-            cor_termo = "#ff4b4b"; status_termo = f"🔴 **ESTOURO CRÍTICO (> 20%):** Faturou R$ {faturamento_atual:,.2f}. Ultrapassou a tolerância de R$ {limite_extrapolacao:,.2f}! O desenquadramento é RETROATIVO a Janeiro com juros absurdos. Contate um contador JÁ!"
+            cor_termo = "#ff4b4b"
+            icone = "🔴"
+            titulo_status = "ESTOURO CRÍTICO (> 20%)"
+            texto_status = f"Faturou <b>{fat_br}</b>. Ultrapassou a tolerância máxima de <b>{ext_br}</b>! O desenquadramento é RETROATIVO a Janeiro com cobrança de impostos atrasados e juros. Contate o contador JÁ!"
 
         c_termo1, c_termo2, c_termo3 = st.columns([1, 1, 1])
         c_termo1.metric(f"Faturado em {ano_selecionado}", f"R$ {faturamento_atual:,.2f}")
@@ -4476,17 +4496,23 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             c_termo3.metric("Valor Excedido", f"R$ {faturamento_atual - limite_mei:,.2f}", delta="Cuidado!", delta_color="inverse")
 
         progresso_visual = min(percentual_atingido / 100, 1.0)
-        st.markdown(
-            f"""
-            <div style="width: 100%; background-color: #f0f2f6; border-radius: 10px; height: 15px;">
-                <div style="width: {progresso_visual*100}%; background-color: {cor_termo}; height: 15px; border-radius: 10px; transition: width 0.5s ease-in-out;">
-                </div>
+        
+        # 💡 O HTML MÁGICO: Barra de progresso customizada e Caixa de Alerta Elegante
+        layout_termometro = f"""
+        <div style="width: 100%; background-color: #e9ecef; border-radius: 8px; height: 12px; margin-bottom: 8px;">
+            <div style="width: {progresso_visual*100}%; background-color: {cor_termo}; height: 12px; border-radius: 8px; transition: width 0.5s ease-in-out;">
             </div>
-            <div style="margin-top: 5px; font-weight: bold; color: {cor_termo};">{percentual_atingido:.1f}% do teto atingido no ano.</div>
-            """, 
-            unsafe_allow_html=True
-        )
-        st.write(status_termo)
+        </div>
+        <div style="font-weight: bold; color: {cor_termo}; text-align: right; font-size: 13px; margin-bottom: 15px;">
+            {percentual_atingido:.1f}% do teto atingido
+        </div>
+        
+        <div style="padding: 15px; border-left: 5px solid {cor_termo}; background-color: #f8f9fa; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <strong style="color: {cor_termo}; font-size: 16px;">{icone} {titulo_status}</strong><br>
+            <span style="color: #495057; font-size: 14px;">{texto_status}</span>
+        </div>
+        """
+        st.markdown(layout_termometro, unsafe_allow_html=True)
         
         # 📝 DECLARAÇÃO ANUAL (DASN-SIMEI)
         st.write("")
