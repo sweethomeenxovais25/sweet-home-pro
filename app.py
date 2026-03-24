@@ -5120,7 +5120,12 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                                 resposta = chat.send_message(pergunta_atual)
                                 
                                 if resposta and resposta.text:
-                                    texto_final = resposta.text
+                                    # 🛡️ BLINDAGEM DO BUG MATEMÁTICO: Evita que o Streamlit confunda '$' com equações LaTeX
+                                    texto_final = resposta.text.replace("$ ", "$")
+                                    
+                                    # Formata a resposta para forçar o Streamlit a ler como texto (HTML simples para não quebrar listas)
+                                    resposta_limpa = f"<div>{texto_final.replace('**', '<b>').replace('**', '</b>')}</div>"
+                                    
                                     resposta_placeholder.markdown(texto_final)
                                     st.session_state["contador_mensagens"].append({"role": "assistant", "content": texto_final})
                                     sucesso_ia = True
@@ -5130,6 +5135,12 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                                 
                         if not sucesso_ia:
                             resposta_placeholder.error("⚠️ Ocorreu uma instabilidade na consulta à legislação. Tente novamente.")
+                            
+                        # 📲 BOTÃO DE EXPORTAÇÃO E CÓPIA
+                        if sucesso_ia:
+                            import urllib.parse
+                            msg_zap = urllib.parse.quote(f"Consultoria Digital Baply:\n\n{texto_final}")
+                            st.link_button("📲 Enviar Parecer Contábil por WhatsApp", f"https://wa.me/?text={msg_zap}", use_container_width=True)
 
                     except Exception as e:
                         resposta_placeholder.error(f"Erro no sistema fiscal: {e}")
