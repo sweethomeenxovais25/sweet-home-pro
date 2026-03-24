@@ -4526,10 +4526,18 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
         with st.expander(f"📝 Gerar e Comprovar Declaração Anual (DASN-SIMEI referente a {ano_declaracao})", expanded=False):
             st.info(f"O Governo exige que você declare até 31 de maio de {ano_selecionado} tudo o que foi faturado em **{ano_declaracao}**.")
             
-            # 1. Busca as vendas do ano passado
+            # 1. Busca as vendas do ano passado (Respeitando a Data de Abertura)
             vendas_ano_anterior = df_termometro[df_termometro['DATA_DT'].dt.year == ano_declaracao].copy()
-            vendas_ano_anterior['VALOR_BRUTO'] = vendas_ano_anterior.iloc[:, 11].apply(limpar_v)
-            faturamento_passado = vendas_ano_anterior['VALOR_BRUTO'].sum()
+            
+            # Filtro temporal para não puxar vendas de pessoa física para a DASN
+            vendas_validas_passado = vendas_ano_anterior[
+                (~vendas_ano_anterior['CÓD. CLIENTE'].str.upper().str.contains("TOTAIS", na=False)) &
+                (vendas_ano_anterior.iloc[:, 22].astype(str).str.strip().str.lower() != "cancelado") &
+                (vendas_ano_anterior['DATA_DT'] >= data_corte_cnpj)
+            ].copy()
+            
+            vendas_validas_passado['VALOR_BRUTO'] = vendas_validas_passado.iloc[:, 11].apply(limpar_v)
+            faturamento_passado = vendas_validas_passado['VALOR_BRUTO'].sum()
             
             # 2. Calcula o limite proporcional do ano passado
             limite_passado = 81000.00
