@@ -4809,6 +4809,26 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             df_guias_view = df_cont[df_cont['TIPO_GUIA'] == "DAS MEI (Mensal)"].copy().iloc[::-1]
             
             if not df_guias_view.empty:
+                # 💡 FILTRO INTELIGENTE E ESCALÁVEL
+                # Extrai os anos únicos das competências (ex: "05/2025" -> "2025")
+                anos_registrados = sorted(list(set([str(comp).split('/')[-1].strip() for comp in df_guias_view['COMPETENCIA'] if '/' in str(comp)])), reverse=True)
+                
+                filtro_ano = st.selectbox("Filtrar por Ano:", ["Todos os Anos"] + anos_registrados)
+                
+                if filtro_ano != "Todos os Anos":
+                    df_guias_view = df_guias_view[df_guias_view['COMPETENCIA'].str.contains(filtro_ano, na=False)]
+                
+                # 💡 MICRO-MÉTRICAS DE AUDITORIA
+                t_pago_filtro = df_guias_view['VALOR_PAGO'].sum()
+                t_multa_filtro = df_guias_view['PREJUIZO_JUROS'].sum()
+                
+                st.markdown(f"""
+                <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid {COR_PRIMARIA};">
+                    <small style="color: #666;">Resumo da Seleção:</small><br>
+                    <b>Total Pago:</b> R$ {t_pago_filtro:,.2f} &nbsp;|&nbsp; <b>Total em Multas:</b> R$ {t_multa_filtro:,.2f}
+                </div>
+                """, unsafe_allow_html=True)
+
                 st.dataframe(
                     df_guias_view[['COMPETENCIA', 'DATA_PAGAMENTO', 'VALOR_PAGO', 'PREJUIZO_JUROS', 'LINK_COMPROVANTE']],
                     column_config={
@@ -4821,9 +4841,9 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
                     use_container_width=True, hide_index=True
                 )
             else:
-                st.info("Nenhuma guia paga registrada.")
+                st.info("Nenhuma guia paga registrada para este filtro.")
         else:
-            st.info("Nenhuma guia paga registrada.")
+            st.info("Nenhuma guia paga registrada no sistema.")
 
     # ==========================================
     # ✏️ BORRACHA MÁGICA: CONTABILIDADE E IMPOSTOS
@@ -5019,60 +5039,86 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
             st.info("Nenhum lançamento contábil registrado ainda.")
 
     # ==========================================
-    # 🤖 ASSISTENTE FISCAL MEI (CHATBOT GOV.BR)
+    # 🤖 CONTADOR DIGITAL E ESTRATEGISTA FISCAL (IA)
     # ==========================================
     st.divider()
     
-    if 'resposta_mei_ia' not in st.session_state:
-        st.session_state['resposta_mei_ia'] = ""
+    if "contador_mensagens" not in st.session_state:
+        st.session_state["contador_mensagens"] = [
+            {"role": "assistant", "content": "Olá! Sou o seu **Contador Digital**. Estou treinado com a legislação tributária brasileira (Leis Complementares 123/2006, 188/2021). Posso ajudá-lo a otimizar impostos, simular a transição de MEI para ME (Simples Nacional) e organizar a sua contabilidade. Qual é o seu cenário atual?"}
+        ]
 
-    with st.expander("🤖 Assistente Fiscal do MEI (Tire suas dúvidas legais)", expanded=False):
-        st.markdown("Tem dúvidas sobre licença-maternidade, limite de compras, INSS, juros de atraso ou contratação de funcionário? **Pergunte ao nosso especialista treinado com as regras do portal Gov.br.**")
+    with st.expander("🤖 Consultoria Contábil Digital (Tire dúvidas e planeje o seu crescimento)", expanded=False):
         
-        pergunta_mei = st.text_area("O que você precisa saber sobre o MEI?", placeholder="Ex: Qual o juros se eu atrasar a guia DAS? Posso ter filial?")
+        caixa_chat_fiscal = st.container(height=350, border=False)
         
-        if st.button("Consultar Legislação 🔎"):
-            if pergunta_mei:
-                with st.spinner("Consultando base de dados do Simples Nacional..."):
+        with caixa_chat_fiscal:
+            for msg in st.session_state["contador_mensagens"]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+        
+        if pergunta_fiscal := st.chat_input("Ex: Compensa migrar para ME no Anexo I? Como calculo o DASN?"):
+            st.session_state["contador_mensagens"].append({"role": "user", "content": pergunta_fiscal})
+            
+            with caixa_chat_fiscal:
+                with st.chat_message("user"):
+                    st.markdown(pergunta_fiscal)
+
+            with caixa_chat_fiscal:
+                with st.chat_message("assistant"):
+                    resposta_placeholder = st.empty()
+                    resposta_placeholder.markdown("⏳ *A analisar a legislação vigente...*")
+                    
                     try:
                         import google.generativeai as genai
                         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
                         
-                        prompt_fiscal = f"""
-                        Você é um Consultor Fiscal Sênior especialista em MEI (Microempreendedor Individual) no Brasil, treinado com os dados oficiais do portal Gov.br (PGMEI) e Sebrae.
-                        A usuária Bia, dona da loja de enxovais Sweet Home, está te fazendo a seguinte pergunta:
+                        # 🧠 O CÉREBRO DO CONTADOR DIGITAL
+                        prompt_contador = f"""
+                        Você atua como o Contador Digital Chefe da 'Sweet Home Enxovais'.
+                        A sua missão é proteger a empresa de multas, economizar dinheiro com impostos e guiar o crescimento estrutural de MEI para ME (Microempresa).
                         
-                        "{pergunta_mei}"
-                        
-                        REGRAS PARA A RESPOSTA:
-                        1. Seja direto, didático e empático. Evite juridiquês complicado.
-                        2. Baseie sua resposta APENAS na lei vigente do MEI no Brasil.
-                        3. Se perguntarem sobre multas de atraso do DAS, informe EXATAMENTE a regra: Multa de 0,33% ao dia (limitada a 20%) + Juros da taxa Selic + 1% no mês do pagamento.
-                        4. Se perguntarem sobre compras, o limite é de 80% da receita bruta.
-                        5. Formate a resposta usando Markdown (negritos e tópicos) para fácil leitura.
+                        DIRETRIZES DE RESPOSTA:
+                        1. ATUAÇÃO: Você não é apenas um "leitor de regras". Você é um estrategista de negócios. Mostre os Prós e Contras financeiros (Ex: "Se você faturar X, vale a pena ir para o Simples Nacional Anexo I porque a alíquota inicial é de 4%").
+                        2. ABRANGÊNCIA: Domine regras do MEI, Simples Nacional, contratação de funcionários (CLT), licenças e emissão de NFe.
+                        3. LEGALIDADE: Quando necessário, cite as bases legais (Ex: LC 123/2006) para transmitir autoridade e confiança.
+                        4. TOM: Profissional, consultivo, direto e altamente focado na economia de recursos da empresa. Evite respostas genéricas de "consulte um contador", pois VOCÊ é o contador digital primário.
+                        5. FORMATAÇÃO: Use negritos, listas e tabelas (se houver comparativos numéricos) para deixar a leitura impecável.
                         """
                         
+                        # Transforma o histórico do Streamlit no formato nativo do Gemini para chat
+                        historico_gemini = []
+                        for m in st.session_state["contador_mensagens"][-5:]: # Mantém contexto das últimas 5 mensagens
+                            role = "model" if m["role"] == "assistant" else "user"
+                            historico_gemini.append({"role": role, "parts": [m["content"]]})
+                            
+                        # Remove a última mensagem (a pergunta atual) para não duplicar
+                        pergunta_atual = historico_gemini.pop()['parts'][0]
+
                         modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"]
+                        sucesso_ia = False
+                        
                         for m in modelos:
                             try:
-                                modelo = genai.GenerativeModel(m)
-                                resposta = modelo.generate_content(prompt_fiscal)
-                                if resposta:
-                                    st.session_state['resposta_mei_ia'] = resposta.text
+                                modelo = genai.GenerativeModel(m, system_instruction=prompt_contador)
+                                chat = modelo.start_chat(history=historico_gemini)
+                                resposta = chat.send_message(pergunta_atual)
+                                
+                                if resposta and resposta.text:
+                                    texto_final = resposta.text
+                                    resposta_placeholder.markdown(texto_final)
+                                    st.session_state["contador_mensagens"].append({"role": "assistant", "content": texto_final})
+                                    sucesso_ia = True
                                     break
-                            except: continue
-                    except Exception as e:
-                        st.error(f"Erro na IA: {e}")
-            else:
-                st.warning("Digite uma pergunta antes de consultar.")
-                
-        if st.session_state['resposta_mei_ia']:
-            st.info("💡 **Resposta Oficial do Assistente:**")
-            st.markdown(st.session_state['resposta_mei_ia'])
-            if st.button("Limpar Resposta"):
-                st.session_state['resposta_mei_ia'] = ""
-                st.rerun()
+                            except Exception as e:
+                                continue # Tenta o próximo modelo
+                                
+                        if not sucesso_ia:
+                            resposta_placeholder.error("⚠️ Ocorreu uma instabilidade na consulta à legislação. Tente novamente.")
 
+                    except Exception as e:
+                        resposta_placeholder.error(f"Erro no sistema fiscal: {e}")
+                        
 # ==========================================================
 # ⚙️ SEÇÃO 9: PAINEL DE ADMINISTRAÇÃO (CÂMARA SECRETA)
 # ==========================================================
