@@ -4519,28 +4519,121 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
         with st.expander(f"📝 Gerar e Comprovar Declaração Anual (DASN-SIMEI referente a {ano_declaracao})", expanded=False):
             st.info(f"O Governo exige que você declare até 31 de maio de {ano_selecionado} tudo o que foi faturado em **{ano_declaracao}**.")
             
+            # 1. Busca as vendas do ano passado
             vendas_ano_anterior = df_termometro[df_termometro['DATA_DT'].dt.year == ano_declaracao].copy()
             vendas_ano_anterior['VALOR_BRUTO'] = vendas_ano_anterior.iloc[:, 11].apply(limpar_v)
             faturamento_passado = vendas_ano_anterior['VALOR_BRUTO'].sum()
             
-            c_dasn1, c_dasn2 = st.columns([1, 1.5])
+            # 2. Calcula o limite proporcional do ano passado
+            limite_passado = 81000.00
+            limite_extra_passado = 97200.00
+            
+            if DATA_ABERTURA:
+                try:
+                    data_abertura_obj = datetime.strptime(DATA_ABERTURA, "%d/%m/%Y").date()
+                    ano_ab_passado = data_abertura_obj.year
+                    mes_ab_passado = data_abertura_obj.month
+                    
+                    if ano_declaracao < ano_ab_passado:
+                        limite_passado = 0.0
+                        limite_extra_passado = 0.0
+                    elif ano_declaracao == ano_ab_passado:
+                        meses_ativos_passado = 12 - mes_ab_passado + 1
+                        limite_passado = meses_ativos_passado * 6750.00
+                        limite_extra_passado = limite_passado * 1.20
+                except: pass
+            
+            excesso = faturamento_passado - limite_passado if faturamento_passado > limite_passado else 0.0
+            
+            # Formatação BR
+            fat_passado_br = f"R$ {faturamento_passado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            lim_passado_br = f"R$ {limite_passado:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            excesso_br = f"R$ {excesso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+            st.markdown("### 📊 Simulador Oficial DASN-SIMEI")
+            
+            # --- ESPELHO DA RECEITA FEDERAL (HTML) ---
+            cor_alerta = "#ff4b4b" if excesso > 0 else "#28a745"
+            layout_receita = f"""
+            <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; background-color: #fafafa;">
+                <h4 style="margin-top: 0; color: #333; font-size: 16px;">Apuração do Excesso de Receita (Ano Calendário: {ano_declaracao})</h4>
+                <table style="width: 100%; border-collapse: collapse; font-family: monospace; font-size: 14px;">
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; color: #555;">Receita Bruta anual:</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #333;">{fat_passado_br} (+)</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 8px 0; color: #555;">Limite legal no ano:</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #333;">{lim_passado_br} (-)</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #555;">Valor acima do limite:</td>
+                        <td style="padding: 8px 0; text-align: right; font-weight: bold; color: {cor_alerta};">{excesso_br} (=)</td>
+                    </tr>
+                </table>
+            </div>
+            """
+            st.markdown(layout_receita, unsafe_allow_html=True)
+            
+            if excesso > 0:
+                st.error(f"🚨 **Atenção:** A receita bruta total ultrapassou o limite permitido. Transmita a DASN-Simei e comunique o desenquadramento obrigatório. Lei Complementar 123/2006, art. 18-A, § 7º.")
+            else:
+                st.success("✅ **Tudo OK!** A sua empresa faturou dentro do limite permitido no ano anterior. Nenhuma multa por excesso será gerada.")
+            
+            # --- VALORES APURADOS (BUSCA NA ABA CONTABILIDADE) ---
+            st.write("#### 📑 Conferência de Guias Pagas (Valores Apurados)")
+            st.caption(f"Estes são os impostos mensais do ano {ano_declaracao} que já constam no banco de dados da empresa:")
+            
+            if not df_cont.empty:
+                df_cont['TIPO_LIMPO'] = df_cont['TIPO_GUIA'].astype(str).str.strip()
+                df_cont['COMP_LIMPA'] = df_cont['COMPETENCIA'].astype(str).str.strip()
+                guias_passado = df_cont[
+                    (df_cont['TIPO_LIMPO'] == "DAS MEI (Mensal)") & 
+                    (df_cont['COMP_LIMPA'].str.contains(str(ano_declaracao), na=False)) &
+                    (df_cont['STATUS'].astype(str).str.strip().str.upper() == "PAGO")
+                ].copy()
+                
+                if not guias_passado.empty:
+                    # Organizar a tabela bonitinha
+                    st.dataframe(
+                        guias_passado[['COMPETENCIA', 'DATA_PAGAMENTO', 'VALOR_PAGO', 'PREJUIZO_JUROS']],
+                        column_config={
+                            "COMPETENCIA": "Mês", 
+                            "DATA_PAGAMENTO": "Data do Pagamento",
+                            "VALOR_PAGO": "Valor Pago",
+                            "PREJUIZO_JUROS": "Juros embutidos"
+                        },
+                        use_container_width=True, hide_index=True
+                    )
+                else:
+                    st.info(f"Nenhuma guia do ano de {ano_declaracao} foi registrada como paga no sistema.")
+            else:
+                st.info("Aba contábil vazia.")
+
+            # --- FECHAMENTO E UPLOAD ---
+            st.divider()
+            c_dasn1, c_dasn2 = st.columns([1, 1])
             with c_dasn1:
-                st.markdown(f"##### Valor Exato para declarar:\n### **R$ {faturamento_passado:,.2f}**")
-                st.link_button("🌐 Acessar Portal da Receita Federal", "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Default.aspx", type="primary")
+                st.write("**Pronto para declarar?**")
+                st.write("Use os valores do painel acima para preencher o site oficial sem medo de errar.")
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.link_button("🌐 Acessar Portal da Receita Federal", "https://www8.receita.fazenda.gov.br/SimplesNacional/Aplicacoes/ATSPO/dasnsimei.app/Default.aspx", type="primary", use_container_width=True)
             
             with c_dasn2:
-                st.markdown("##### 🔒 Anexar Comprovante de Entrega")
                 with st.form("form_dasn", clear_on_submit=True):
-                    dasn_arquivo = st.file_uploader("Recibo DASN (PDF/Foto)", type=['pdf', 'png', 'jpg'])
-                    if st.form_submit_button("Salvar Recibo DASN", type="secondary"):
+                    st.markdown("**🔒 Anexar Comprovante Final**")
+                    dasn_arquivo = st.file_uploader("Recibo DASN Entregue (PDF)", type=['pdf', 'png', 'jpg'])
+                    if st.form_submit_button("Guardar Recibo no Cofre", type="secondary", use_container_width=True):
                         if dasn_arquivo:
-                            with st.spinner("Salvando..."):
+                            with st.spinner("A guardar documento na nuvem..."):
                                 nome_doc = f"DASN_SIMEI_{ano_declaracao}_entregue_em_{ano_selecionado}"
                                 id_cloud, link_cloud = upload_para_cloudinary(dasn_arquivo.getvalue(), nome_doc, "Contabilidade")
                                 if link_cloud:
                                     try:
-                                        data_agora = datetime.now(pytz.timezone('America/Sao_Paulo')).strftime("%d/%m/%Y")
-                                        # Formato Novo: TIPO | COMP | VENC | V_BASE | V_PAGO | PREJ | ATRASO | STATUS | DATA | LINK
+                                        import pytz
+                                        fuso = pytz.timezone('America/Sao_Paulo')
+                                        data_agora = datetime.now(fuso).strftime("%d/%m/%Y")
+                                        aba_contabilidade = planilha_mestre.worksheet("CONTABILIDADE")
                                         aba_contabilidade.append_row(["DASN (Declaração Anual)", f"Ano-Calendário {ano_declaracao}", "31/05", 0.00, 0.00, 0.00, 0, "ENTREGUE", data_agora, link_cloud], value_input_option='USER_ENTERED')
                                         st.success(f"✅ Declaração salva com sucesso!"); st.cache_data.clear(); st.rerun()
                                     except Exception as e: st.error(f"Erro: {e}")
