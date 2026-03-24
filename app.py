@@ -82,10 +82,9 @@ planilha_mestre = conectar_google()
 # ==========================================
 # 🎨 2. MOTOR WHITE-LABEL (LEITURA DINÂMICA BLINDADA)
 # ==========================================
-# 💡 O truque do sublinhado (_planilha) avisa o Streamlit para não tentar criptografar a conexão do Google
 @st.cache_data(ttl=3600, show_spinner=False)
 def carregar_identidade_visual(_planilha):
-    """Busca as cores no Google Sheets apenas 1 vez por hora (ou até o cache ser limpo)"""
+    """Busca as cores e dados fiscais no Google Sheets"""
     try:
         aba_config = _planilha.worksheet("CONFIGURACOES")
         dados_config = aba_config.get_all_values()
@@ -96,20 +95,19 @@ def carregar_identidade_visual(_planilha):
             dicionario_config.get("LOGO_URL", st.secrets["cliente"]["logo_url"]),
             dicionario_config.get("COR_PRIMARIA", st.secrets["tema"]["cor_primaria"]),
             dicionario_config.get("COR_SECUNDARIA", st.secrets["tema"]["cor_secundaria"]),
-            dicionario_config.get("COR_TEXTO", st.secrets["tema"]["cor_texto"])
+            dicionario_config.get("COR_TEXTO", st.secrets["tema"]["cor_texto"]),
+            dicionario_config.get("CNPJ_LOJA", ""),
+            dicionario_config.get("DATA_ABERTURA", "")
         )
     except Exception:
-        # Se a aba falhar na PRIMEIRA leitura, usa o cofre de segurança
         return (
-            st.secrets["cliente"]["nome_loja"],
-            st.secrets["cliente"]["logo_url"],
-            st.secrets["tema"]["cor_primaria"],
-            st.secrets["tema"]["cor_secundaria"],
-            st.secrets["tema"]["cor_texto"]
+            st.secrets["cliente"]["nome_loja"], st.secrets["cliente"]["logo_url"],
+            st.secrets["tema"]["cor_primaria"], st.secrets["tema"]["cor_secundaria"], st.secrets["tema"]["cor_texto"],
+            "", ""
         )
 
-# Executa a função e desempacota as 5 variáveis de uma vez
-NOME_LOJA, LOGO_URL, COR_PRIMARIA, COR_SECUNDARIA, COR_TEXTO = carregar_identidade_visual(planilha_mestre)
+# Executa a função e desempacota as 7 variáveis
+NOME_LOJA, LOGO_URL, COR_PRIMARIA, COR_SECUNDARIA, COR_TEXTO, CNPJ_LOJA, DATA_ABERTURA = carregar_identidade_visual(planilha_mestre)
 
 # ==========================================
 # 3. CONFIGURAÇÃO ÚNICA DA PÁGINA
@@ -4431,20 +4429,51 @@ elif menu_selecionado == "🏛️ Contabilidade e MEI":
         vendas_validas['VALOR_BRUTO'] = vendas_validas.iloc[:, 11].apply(limpar_v) 
         faturamento_atual = vendas_validas['VALOR_BRUTO'].sum()
         
-        limite_mei = 81000.00
+        # 🧠 O CÉREBRO TRIBUTÁRIO (Limites Proporcionais e Regra dos 20%)
+        limite_mei = 81000.00 # Limite padrão para anos completos
+        limite_extrapolacao = 97200.00 # Limite padrão com 20% de tolerância
+        meses_ativos = 12
+
+        if DATA_ABERTURA:
+            try:
+                data_abertura_obj = datetime.strptime(DATA_ABERTURA, "%d/%m/%Y").date()
+                ano_abertura = data_abertura_obj.year
+                mes_abertura = data_abertura_obj.month
+                
+                if ano_selecionado < ano_abertura:
+                    limite_mei = 0.0 # A empresa ainda não existia
+                    limite_extrapolacao = 0.0
+                elif ano_selecionado == ano_abertura:
+                    # Regra da Proporcionalidade: R$ 6.750 por mês (incluindo o mês de abertura)
+                    meses_ativos = 12 - mes_abertura + 1
+                    limite_mei = meses_ativos * 6750.00
+                    limite_extrapolacao = limite_mei * 1.20 # + 20% de tolerância
+            except:
+                pass
+
         percentual_atingido = (faturamento_atual / limite_mei) * 100 if limite_mei > 0 else 0
 
-        if percentual_atingido < 70:
-            cor_termo = "#28a745"; status_termo = "🟢 **Zona Segura:** Faturamento dentro da margem legal."
-        elif percentual_atingido < 90:
-            cor_termo = "#ffa500"; status_termo = "🟡 **Atenção:** Aproximando-se do limite do MEI. Monitore de perto."
+        # 🚥 ANÁLISE DE RISCO FISCAL
+        if limite_mei == 0:
+            cor_termo = "#e0e0e0"; status_termo = "⚪ **Inativo:** A empresa não estava aberta neste ano."
+            percentual_atingido = 0
+        elif faturamento_atual <= limite_mei * 0.80:
+            cor_termo = "#28a745"; status_termo = "🟢 **Zona Segura:** Faturamento excelente e dentro da margem legal."
+        elif faturamento_atual <= limite_mei:
+            cor_termo = "#ffa500"; status_termo = "🟡 **Alerta Amarelo:** Aproximando-se do teto legal do MEI. Monitore as vendas de perto."
+        elif faturamento_atual <= limite_extrapolacao:
+            cor_termo = "#fd7e14"; status_termo = f"🟠 **Estouro Tolerável (Até 20%):** Faturou R$ {faturamento_atual:,.2f}. Passou do teto de R$ {limite_mei:,.2f}, mas ficou abaixo dos 20%. Será desenquadrada no próximo ano, mas paga apenas a multa no DASN."
         else:
-            cor_termo = "#ff4b4b"; status_termo = "🔴 **Risco de Desenquadramento:** Limite estourando! Fale com um contador."
+            cor_termo = "#ff4b4b"; status_termo = f"🔴 **ESTOURO CRÍTICO (> 20%):** Faturou R$ {faturamento_atual:,.2f}. Ultrapassou a tolerância de R$ {limite_extrapolacao:,.2f}! O desenquadramento é RETROATIVO a Janeiro com juros absurdos. Contate um contador JÁ!"
 
         c_termo1, c_termo2, c_termo3 = st.columns([1, 1, 1])
         c_termo1.metric(f"Faturado em {ano_selecionado}", f"R$ {faturamento_atual:,.2f}")
-        c_termo2.metric("Teto Máximo MEI", f"R$ {limite_mei:,.2f}")
-        c_termo3.metric("Margem Restante", f"R$ {limite_mei - faturamento_atual:,.2f}")
+        c_termo2.metric("Teto Proporcional" if meses_ativos < 12 else "Teto Máximo MEI", f"R$ {limite_mei:,.2f}", help=f"Calculado com base em {meses_ativos} meses de atividade neste ano.")
+        
+        if faturamento_atual <= limite_mei:
+            c_termo3.metric("Margem Restante", f"R$ {limite_mei - faturamento_atual:,.2f}")
+        else:
+            c_termo3.metric("Valor Excedido", f"R$ {faturamento_atual - limite_mei:,.2f}", delta="Cuidado!", delta_color="inverse")
 
         progresso_visual = min(percentual_atingido / 100, 1.0)
         st.markdown(
@@ -5012,6 +5041,33 @@ elif menu_selecionado == "⚙️ Painel de Administração":
                 aba_conf.update_cell(celula.row, 2, valor)
             except:
                 aba_conf.append_row([chave, valor])
+
+        # 🏛️ PARTE 0: DADOS FISCAIS E CNPJ
+        st.write("### 🏛️ Dados Fiscais (Para Cálculo MEI)")
+        with st.form("form_dados_fiscais"):
+            st.info("Digite o CNPJ para o sistema calcular o teto proporcional do seu imposto no ano de abertura.")
+            c_cnpj1, c_cnpj2 = st.columns([2, 1])
+            novo_cnpj = c_cnpj1.text_input("CNPJ da Empresa", value=CNPJ_LOJA, max_chars=18)
+            
+            c_cnpj2.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if c_cnpj2.form_submit_button("Sincronizar na Receita 🔎", type="primary", use_container_width=True):
+                if novo_cnpj:
+                    with st.spinner("A consultar a Receita Federal..."):
+                        dados_cnpj = buscar_cnpj_magico(novo_cnpj)
+                        if dados_cnpj:
+                            data_abertura_receita = dados_cnpj.get('abertura', '')
+                            atualizar_config("CNPJ_LOJA", novo_cnpj)
+                            atualizar_config("DATA_ABERTURA", data_abertura_receita)
+                            
+                            st.success(f"✅ Empresa: {dados_cnpj.get('nome', '')} | Abertura: {data_abertura_receita}")
+                            import time; time.sleep(2)
+                            st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+                        else:
+                            st.error("❌ CNPJ inválido ou sistema da Receita indisponível.")
+                else:
+                    st.warning("Digite o CNPJ.")
+        
+        st.divider()
 
         # 🏢 PARTE 1: ALTERAÇÃO DO NOME DA EMPRESA
         st.write("### 🏢 Nome de Exibição do Sistema")
